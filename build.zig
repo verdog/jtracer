@@ -1,5 +1,5 @@
 const std = @import("std");
-// const SDLSdk = @import("external/SDL.zig/Sdk.zig");
+const SDLSdk = @import("external/SDL.zig/Sdk.zig");
 
 pub fn build(b: *std.build.Builder) void {
     // Standard target options allows the person running `zig build` to choose
@@ -12,16 +12,16 @@ pub fn build(b: *std.build.Builder) void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
     const mode = b.standardReleaseOptions();
 
-    // const SDL = SDLSdk.init(b);
+    const SDL = SDLSdk.init(b);
 
     const exe = b.addExecutable("jtracer", "src/main.zig");
     exe.emit_docs = .emit;
     exe.setTarget(target);
     exe.setMainPkgPath("./src");
 
-    // SDL.link(exe, .dynamic);
-    // exe.addPackage(SDL.getWrapperPackage("sdl2"));
-    // exe.linkSystemLibrary("sdl2_image");
+    SDL.link(exe, .dynamic);
+    exe.addPackage(SDL.getWrapperPackage("sdl2"));
+    exe.linkSystemLibrary("sdl2_image");
 
     exe.setBuildMode(mode);
     exe.install();
