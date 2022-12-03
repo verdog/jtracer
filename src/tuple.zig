@@ -13,19 +13,18 @@ pub const Tuple = struct {
     }
 
     pub fn equals(self: This, other: This) bool {
-        // TODO use epsilon?
-        return @reduce(.And, self.vec == other.vec);
+        const diff = @fabs(self.vec - other.vec);
+        const max_diff = @reduce(.Max, diff);
+        return max_diff <= std.math.floatEps(f64);
     }
 
     pub fn plus(self: This, other: This) This {
         const t = This{ .vec = self.vec + other.vec };
-        std.debug.assert(t.isPoint() or t.isVector());
         return t;
     }
 
     pub fn minus(self: This, other: This) This {
         const t = This{ .vec = self.vec - other.vec };
-        std.debug.assert(t.isPoint() or t.isVector());
         return t;
     }
 
@@ -95,6 +94,7 @@ pub const Point = struct {
         return Tuple.init(x, y, z, 1);
     }
 };
+
 pub const Vector = struct {
     pub fn init(x: f64, y: f64, z: f64) Tuple {
         return Tuple.init(x, y, z, 0);
@@ -174,6 +174,32 @@ test "Tuple.equals: exact" {
     try expect(p.equals(p));
     try expect(p.equals(p2));
     try expect(p2.equals(p));
+}
+
+test "Tuple.equals: epsilon" {
+    const t = Tuple.init(1.1, 4.4, 6.0, -19);
+    const e = std.math.floatEps(f64);
+    var t2 = t;
+
+    t2 = t2.plus(Tuple.init(e, 0, 0, 0));
+    try expect(t.equals(t2));
+    try expect(t2.equals(t));
+
+    t2 = t2.plus(Tuple.init(0, e, 0, 0));
+    try expect(t.equals(t2));
+    try expect(t2.equals(t));
+
+    t2 = t2.plus(Tuple.init(0, 0, e, 0));
+    try expect(t.equals(t2));
+    try expect(t2.equals(t));
+
+    t2 = t2.plus(Tuple.init(0, 0, 0, e));
+    try expect(t.equals(t2));
+    try expect(t2.equals(t));
+
+    t2 = t2.plus(Tuple.init(e, 0, 0, 0));
+    try expect(!t.equals(t2));
+    try expect(!t2.equals(t));
 }
 
 test "Tuple.plus: point plus vector equals point" {
