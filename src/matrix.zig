@@ -1,6 +1,7 @@
 //! simple matrix implementation
 
 const std = @import("std");
+const mymath = @import("mymath.zig");
 
 const Tuple = @import("tuple.zig").Tuple;
 
@@ -24,6 +25,10 @@ pub fn Matrix(comptime _rows: usize, comptime _cols: usize) type {
             }
 
             return m;
+        }
+
+        pub fn fromVector(inits: @Vector(compt_rows * compt_columns, f64)) This {
+            return .{ .vec = inits };
         }
 
         pub fn identity() This {
@@ -55,7 +60,13 @@ pub fn Matrix(comptime _rows: usize, comptime _cols: usize) type {
         pub fn equals(self: This, other: This) bool {
             const diff = @fabs(self.vec - other.vec);
             const max_diff = @reduce(.Max, diff);
-            return max_diff <= std.math.floatEps(f64);
+            return max_diff <= mymath.floatTolerance;
+        }
+
+        pub fn equalsTolerance(self: This, other: This, tolerance: usize) bool {
+            const diff = @fabs(self.vec - other.vec);
+            const max_diff = @reduce(.Max, diff);
+            return max_diff <= std.math.floatEps(f64) * @intToFloat(f64, tolerance);
         }
 
         fn sliceRows(self: This) [This.compt_rows]@Vector(This.compt_columns, f64) {
@@ -124,6 +135,81 @@ pub fn Matrix(comptime _rows: usize, comptime _cols: usize) type {
             }
 
             return This.init(inits);
+        }
+
+        pub fn determinant(self: This) f64 {
+            if (This.compt_rows != This.compt_columns)
+                @compileError("Only square matrices are supported");
+
+            switch (This.compt_rows) {
+                2 => return self.vec[0] * self.vec[3] - self.vec[1] * self.vec[2],
+                3...4 => {
+                    var elemVec = @splat(This.compt_columns, self.vec[0]);
+                    var cofVec = @splat(This.compt_columns, self.cofactor(0, 0));
+
+                    comptime var i: usize = 1;
+                    inline while (i < This.compt_columns) : (i += 1) {
+                        elemVec[i] = self.vec[i];
+                        cofVec[i] = self.cofactor(0, i);
+                    }
+
+                    return @reduce(.Add, elemVec * cofVec);
+                },
+                else => @compileError("Unsupported size"),
+            }
+        }
+
+        pub fn isInvertible(self: This) bool {
+            // TODO use epsilon
+            return self.determinant() != 0;
+        }
+
+        pub fn inverted(self: This) !This {
+            if (!self.isInvertible()) return error.NotInvertible;
+
+            var cofacts = blk: {
+                var result = self.vec;
+
+                comptime var i: usize = 0;
+                inline while (i < This.compt_rows * This.compt_columns) : (i += 1) {
+                    const this_row = i / This.compt_rows;
+                    const this_col = i % This.compt_columns;
+                    result[i] = self.cofactor(this_row, this_col);
+                }
+
+                break :blk result;
+            };
+
+            const size = This.compt_rows * This.compt_columns;
+            cofacts /= @splat(size, self.determinant());
+
+            return This.fromVector(cofacts).transposed();
+        }
+
+        pub fn submatrix(self: This, row: usize, column: usize) Matrix(This.compt_rows - 1, This.compt_columns - 1) {
+            // asumming a square matrix
+            var inits: std.meta.Tuple(&[_]type{f64} ** (_rows - 1) ** (_cols - 1)) = .{0} ** (_rows - 1) ** (_cols - 1);
+
+            var self_i: usize = 0;
+            inline for (inits) |*val| {
+                while ((self_i / This.compt_rows) == row or (self_i % This.compt_columns) == column) self_i += 1;
+                val.* = self.vec[self_i];
+                self_i += 1;
+            }
+
+            return Matrix(This.compt_rows - 1, This.compt_columns - 1).init(inits);
+        }
+
+        pub fn minor(self: This, row: usize, column: usize) f64 {
+            return self.submatrix(row, column).determinant();
+        }
+
+        pub fn cofactor(self: This, row: usize, column: usize) f64 {
+            const min = self.minor(row, column);
+            if ((row ^ column) & 1 == 1) {
+                return min * -1.0;
+            }
+            return min;
         }
 
         const This = @This();
@@ -324,4 +410,237 @@ test "matrix multiplication of identity" {
     // zig fmt: on
 
     try expect(m.mult(Matrix(4, 4).identity()).equals(m));
+}
+
+test "2x2 matrix determinant" {
+    const m = Matrix(2, 2).init(.{ 1, 5, -3, 2 });
+
+    try expectEq(m.determinant(), 17);
+}
+
+test "3x3 matrix determinant" {
+    // zig fmt: off
+    const m = Matrix(3, 3).init(.{
+        1,  2,  6,
+       -5,  8, -4,
+        2,  6,  4,
+    });
+    // zig fmt: on
+
+    try expectEq(m.cofactor(0, 0), 56);
+    try expectEq(m.cofactor(0, 1), 12);
+    try expectEq(m.cofactor(0, 2), -46);
+    try expectEq(m.determinant(), -196);
+}
+
+test "4x4 matrix determinant" {
+    // zig fmt: off
+    const m = Matrix(4, 4).init(.{
+        -2, -8,  3,  5,
+        -3,  1,  7,  3,
+         1,  2, -9,  6,
+        -6,  7,  7, -9,
+    });
+    // zig fmt: on
+
+    try expectEq(m.cofactor(0, 0), 690);
+    try expectEq(m.cofactor(0, 1), 447);
+    try expectEq(m.cofactor(0, 2), 210);
+    try expectEq(m.cofactor(0, 3), 51);
+    try expectEq(m.determinant(), -4071);
+}
+
+test "A submatrix of a 4x4 matrix is a 3x3 matrix" {
+    // zig fmt: off
+    const m = Matrix(4, 4).init(.{
+        1,    2,    3,    4,
+        5,    6,    7,    8,
+        9,    8,    7,    6,
+        5,    4,    3,    2,
+    });
+
+    const a = Matrix(3, 3).init(.{
+        1, 3, 4,
+        5, 7, 8,
+        5, 3, 2,
+    });
+    // zig fmt: on
+
+    const sub = m.submatrix(2, 1);
+
+    try expect(sub.equals(a));
+}
+
+test "A submatrix of a 3x3 matrix is a 2x2 matrix" {
+    // zig fmt: off
+    const m = Matrix(3, 3).init(.{
+        1, 3, 4,
+        5, 7, 8,
+        5, 3, 2,
+    });
+
+    const a = Matrix(2, 2).init(.{
+        1, 4,
+        5, 2,
+    });
+    // zig fmt: on
+
+    const sub = m.submatrix(1, 1);
+
+    try expect(sub.equals(a));
+}
+
+test "3x3 matrix minor" {
+    // zig fmt: off
+    const m = Matrix(3, 3).init(.{
+        3,  5,  0,
+        2, -1, -7,
+        6, -1,  5,
+    });
+    // zig fmt: on
+
+    const sub = m.submatrix(1, 0);
+
+    try expect(sub.determinant() == 25);
+    try expect(m.minor(1, 0) == 25);
+}
+
+test "3x3 matrix cofactor" {
+    // zig fmt: off
+    const m = Matrix(3, 3).init(.{
+        3,  5,  0,
+        2, -1, -7,
+        6, -1,  5,
+    });
+    // zig fmt: on
+
+    try expect(m.minor(0, 0) == -12);
+    try expect(m.cofactor(0, 0) == -12);
+    try expect(m.minor(1, 0) == 25);
+    try expect(m.cofactor(1, 0) == -25);
+}
+
+test "check for invertibility: invertible" {
+    // zig fmt: off
+    const m = Matrix(4, 4).init(.{
+        6,  4, 4,  4,
+        5,  5, 7,  6,
+        4, -9, 3, -7,
+        9,  1, 7, -6,
+    });
+    // zig fmt: on
+
+    try expectEq(m.determinant(), -2120);
+    try expect(m.isInvertible());
+}
+
+test "check for invertibility: not invertible" {
+    // zig fmt: off
+    const m = Matrix(4, 4).init(.{
+        -4,  2, -2, -3,
+         9,  6,  2,  6,
+         0, -5,  1, -5,
+         0,  0,  0,  0,
+    });
+    // zig fmt: on
+
+    try expectEq(m.determinant(), 0);
+    try expect(!m.isInvertible());
+}
+
+test "inverting a matrix" {
+    // zig fmt: off
+    const m = Matrix(4, 4).init(.{
+        -5,  2,  6, -8,
+         1, -5,  1,  8,
+         7,  7, -6, -7,
+         1, -3,  7,  4,
+    });
+
+    const ii = Matrix(4, 4).init(.{
+         0.21805,  0.45113,  0.24060, -0.04511,
+        -0.80827, -1.45677, -0.44361,  0.52068,
+        -0.07895, -0.22368, -0.05263,  0.19737,
+        -0.52256, -0.81391, -0.30075,  0.30639,
+    });
+    // zig fmt: on
+
+    const i = try m.inverted();
+
+    try expectEq(m.determinant(), 532.0);
+    try expectEq(m.cofactor(2, 3), -160.0);
+    try expectEq(i.at(3, 2), -160.0 / 532.0);
+    try expectEq(m.cofactor(3, 2), 105.0);
+    try expectEq(i.at(2, 3), 105.0 / 532.0);
+
+    // book examples are much less precise than f64
+    try expect(i.equalsTolerance(ii, 100_000_000_000));
+}
+
+test "inverting a matrix 2" {
+    // zig fmt: off
+    const m = Matrix(4, 4).init(.{
+         8, -5,  9,  2,
+         7,  5,  6,  1,
+        -6,  0,  9,  6,
+        -3,  0, -9, -4,
+    });
+
+    const ii = Matrix(4, 4).init(.{
+        -0.15385, -0.15385, -0.28205, -0.53846,
+        -0.07692,  0.12308,  0.02562,  0.03077,
+         0.35897,  0.35897,  0.43590,  0.92308,
+        -0.69231, -0.69231, -0.76923, -1.92308,
+    });
+    // zig fmt: on
+
+    const i = try m.inverted();
+
+    // book examples are much less precise than f64
+    try expect(i.equalsTolerance(ii, 100_000_000_000));
+}
+
+test "inverting a matrix 3" {
+    // zig fmt: off
+    const m = Matrix(4, 4).init(.{
+         9,  3,  0,  9,
+        -5, -2, -6, -3,
+        -4,  9,  6,  4,
+        -7,  6,  6,  2,
+    });
+
+    const ii = Matrix(4, 4).init(.{
+        -0.04074, -0.07778,  0.14444, -0.22222,
+        -0.07778,  0.03333,  0.36667, -0.33333,
+        -0.02901, -0.14630, -0.10926,  0.12963,
+         0.17778,  0.06667, -0.26667,  0.33333,
+    });
+    // zig fmt: on
+
+    const i = try m.inverted();
+
+    // book examples are much less precise than f64
+    try expect(i.equalsTolerance(ii, 100_000_000_000));
+}
+
+test "matrix multiplied by its inverse is itself" {
+    // zig fmt: off
+    const m = Matrix(4, 4).init(.{
+        1,    2,    3,    4,
+        5,    6,    7,    8,
+        9,    8,    7,    6,
+        5,    4,    3,    2,
+    });
+    const m2 = Matrix(4, 4).init(.{
+       -2,    1,    2,    3,
+        3,    2,    1,   -1,
+        4,    3,    6,    5,
+        1,    2,    7,    8,
+    });
+    // zig fmt: on
+
+    const m3 = m.mult(m2);
+    const inverted = m3.mult(try m2.inverted());
+
+    try expect(inverted.equalsTolerance(m, 512));
 }

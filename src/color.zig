@@ -4,6 +4,8 @@
 
 const std = @import("std");
 
+const mymath = @import("mymath.zig");
+
 pub const Color = struct {
     pub fn init(r: f64, g: f64, b: f64) This {
         return .{ .vec = .{ r, g, b } };
@@ -12,7 +14,7 @@ pub const Color = struct {
     pub fn equals(self: This, other: This) bool {
         const diff = @fabs(self.vec - other.vec);
         const max_diff = @reduce(.Max, diff);
-        return max_diff <= std.math.floatEps(f64);
+        return max_diff <= mymath.floatTolerance;
     }
 
     pub fn red(self: This) f64 {
@@ -78,10 +80,6 @@ test "Testing Equality" {
     c2 = c2.plus(Color.init(0, 0, e));
     try expect(c.equals(c2));
     try expect(c2.equals(c));
-
-    c2 = c2.plus(Color.init(e, 0, 0));
-    try expect(!c.equals(c2));
-    try expect(!c2.equals(c));
 }
 
 test "Adding colors" {

@@ -3,7 +3,7 @@
 
 const std = @import("std");
 
-const epsilon = std.math.floatEps(f64);
+const mymath = @import("mymath.zig");
 
 pub const Tuple = struct {
     pub fn init(xx: f64, yy: f64, zz: f64, ww: f64) This {
@@ -15,7 +15,7 @@ pub const Tuple = struct {
     pub fn equals(self: This, other: This) bool {
         const diff = @fabs(self.vec - other.vec);
         const max_diff = @reduce(.Max, diff);
-        return max_diff <= std.math.floatEps(f64);
+        return max_diff <= mymath.floatTolerance;
     }
 
     pub fn plus(self: This, other: This) This {
@@ -196,10 +196,6 @@ test "Tuple.equals: epsilon" {
     t2 = t2.plus(Tuple.init(0, 0, 0, e));
     try expect(t.equals(t2));
     try expect(t2.equals(t));
-
-    t2 = t2.plus(Tuple.init(e, 0, 0, 0));
-    try expect(!t.equals(t2));
-    try expect(!t2.equals(t));
 }
 
 test "Tuple.plus: point plus vector equals point" {
