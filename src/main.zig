@@ -69,4 +69,6 @@ test {
     _ = @import("color.zig");
     _ = @import("qanvas.zig");
     _ = @import("qoi.zig");
+    _ = @import("imgio.zig");
+    _ = @import("matrix.zig");
 }
