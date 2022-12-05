@@ -1,9 +1,12 @@
 const std = @import("std");
 const sdl2 = @import("sdl2");
 
+const imgio = @import("imgio.zig");
+const tlate = @import("transform.zig");
+
+const Point = @import("tuple.zig").Point;
 const Qanvas = @import("qanvas.zig").Qanvas;
 const Color = @import("color.zig").Color;
-const imgio = @import("imgio.zig");
 
 var gpa_impl = std.heap.GeneralPurposeAllocator(.{}){};
 const gpa = gpa_impl.allocator();
@@ -14,10 +17,27 @@ pub fn main() !void {
     var qan = try Qanvas.init(gpa, 1024, 512);
     defer qan.deinit();
 
-    var i: usize = 0;
-    while (i < qan.width and i < qan.height) : (i += 1) {
-        qan.write(Color.init(0, 1, 0), i, i);
-        qan.write(Color.init(1, 1, 0), i, qan.height - i - 1);
+    {
+        var i: usize = 0;
+        while (i < qan.width and i < qan.height) : (i += 1) {
+            qan.write(Color.init(0, 1, 0), i, i);
+            qan.write(Color.init(1, 1, 0), i, qan.height - i - 1);
+        }
+    }
+
+    {
+        const tick = 512;
+        const rot = tlate.makeRotationZ(2 * std.math.pi / @intToFloat(f64, tick));
+        const shr = tlate.makeShearing(0, 0, 1, 0, 0, 0);
+        const anchor = tlate.makeTranslation(512, 256, 0);
+        var clock_hand = Point.init(0, -128, 0);
+
+        var i: usize = 0;
+        while (i < tick) : (i += 1) {
+            const p = anchor.mult(shr).mult(clock_hand);
+            qan.write(Color.init(0, 1, 1), @floatToInt(u32, p.x()), @floatToInt(u32, p.y()));
+            clock_hand = rot.mult(clock_hand);
+        }
     }
 
     var encoded = try imgio.encodeQanvasAsQoi(qan, gpa);
@@ -71,4 +91,5 @@ test {
     _ = @import("qoi.zig");
     _ = @import("imgio.zig");
     _ = @import("matrix.zig");
+    _ = @import("transform.zig");
 }
