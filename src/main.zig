@@ -92,4 +92,7 @@ test {
     _ = @import("imgio.zig");
     _ = @import("matrix.zig");
     _ = @import("transform.zig");
+    _ = @import("ray.zig");
+    _ = @import("sphere.zig");
+    _ = @import("intersect.zig");
 }
