@@ -19,8 +19,14 @@ pub const Qanvas = struct {
             .alctr = alctr,
         };
 
-        for (q.pixels) |*qix, i| {
-            const xy = q.ithPixelCoords(i);
+        q.clear();
+
+        return q;
+    }
+
+    pub fn clear(self: *This) void {
+        for (self.pixels) |*qix, i| {
+            const xy = self.ithPixelCoords(i);
             if (@divTrunc(xy.x, 64) & 1 == @divTrunc(xy.y, 64) & 1) {
                 // magenta
                 qix.* = Color.init(0.1, 0.1, 0.1);
@@ -29,27 +35,31 @@ pub const Qanvas = struct {
                 qix.* = Color.init(0, 0, 0);
             }
         }
-
-        return q;
     }
 
     pub fn deinit(self: *This) void {
         self.alctr.free(self.pixels);
     }
 
-    pub fn ithPixelCoords(self: This, i: usize) struct { x: usize, y: usize } {
+    pub fn ithPixelCoords(self: This, i: usize) struct { x: i64, y: i64 } {
         return .{
-            .x = i % self.width,
-            .y = @divTrunc(i, self.width),
+            .x = @intCast(i64, i % self.width),
+            .y = @intCast(i64, @divTrunc(i, self.width)),
         };
     }
 
-    pub fn at(self: This, x: usize, y: usize) Color {
-        return self.pixels[y * self.width + x];
+    pub fn at(self: This, x: i64, y: i64) Color {
+        const idx = y * @intCast(i64, self.width) + x;
+        if (idx < 0 or idx >= @intCast(i64, self.pixels.len)) return Color.init(0, 0, 0);
+
+        return self.pixels[@intCast(usize, idx)];
     }
 
-    pub fn write(self: This, color: Color, x: usize, y: usize) void {
-        self.pixels[y * self.width + x] = color;
+    pub fn write(self: This, color: Color, x: i64, y: i64) void {
+        const idx = y * @intCast(i64, self.width) + x;
+        if (idx < 0 or idx >= @intCast(i64, self.pixels.len)) return;
+
+        self.pixels[@intCast(usize, idx)] = color;
     }
 
     const This = @This();
@@ -75,6 +85,28 @@ test "Write pixel" {
 
     q.write(red, 24, 24);
     try expect(q.at(24, 24).equals(red));
+}
+
+test "Write pixel out of bounds" {
+    var alloc = std.testing.allocator;
+    var q = try Qanvas.init(alloc, 64, 64);
+    defer q.deinit();
+
+    const red = Color.init(1, 0, 0);
+
+    q.write(red, 128, 128);
+    q.write(red, -128, -128);
+}
+
+test "Read out of bounds returns black" {
+    var alloc = std.testing.allocator;
+    var q = try Qanvas.init(alloc, 64, 64);
+    defer q.deinit();
+
+    const black = Color.init(0, 0, 0);
+
+    try expect(q.at(-1, -1).equals(black));
+    try expect(q.at(64, 64).equals(black));
 }
 
 test "ithPixelCoords" {

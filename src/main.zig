@@ -17,34 +17,6 @@ pub fn main() !void {
     var qan = try Qanvas.init(gpa, 1024, 512);
     defer qan.deinit();
 
-    {
-        var i: usize = 0;
-        while (i < qan.width and i < qan.height) : (i += 1) {
-            qan.write(Color.init(0, 1, 0), i, i);
-            qan.write(Color.init(1, 1, 0), i, qan.height - i - 1);
-        }
-    }
-
-    {
-        const tick = 512;
-        const rot = tlate.makeRotationZ(2 * std.math.pi / @intToFloat(f64, tick));
-        const shr = tlate.makeShearing(0, 0, 1, 0, 0, 0);
-        const anchor = tlate.makeTranslation(512, 256, 0);
-        var clock_hand = Point.init(0, -128, 0);
-
-        var i: usize = 0;
-        while (i < tick) : (i += 1) {
-            const p = anchor.mult(shr).mult(clock_hand);
-            qan.write(Color.init(0, 1, 1), @floatToInt(u32, p.x()), @floatToInt(u32, p.y()));
-            clock_hand = rot.mult(clock_hand);
-        }
-    }
-
-    var encoded = try imgio.encodeQanvasAsQoi(qan, gpa);
-    defer gpa.free(encoded);
-
-    try imgio.saveBufAsFile(encoded, "out.qoi");
-
     try sdl2.init(.{
         .video = true,
         .events = true,
@@ -67,20 +39,57 @@ pub fn main() !void {
     var sdl_renderer = try sdl2.createRenderer(sdl_window, null, .{ .accelerated = true });
     defer sdl_renderer.destroy();
 
-    var sdl_tex = try imgio.encodeQanvasAsSdl(qan, gpa, sdl_renderer);
+    // pipeline is
+    // qanvas -> qixels -> sdl texture
+
+    var qix_tex = try imgio.encodeQanvasAsQixel(qan, gpa);
+    defer gpa.free(qix_tex);
+
+    var sdl_tex = try imgio.encodeQixelsAsSdl(qix_tex, sdl_renderer, @intCast(u32, qan.width), @intCast(u32, qan.height));
     defer sdl_tex.destroy();
 
+    var frame: f64 = 0;
+
     main_loop: while (true) {
+        defer {
+            frame += 1;
+        }
+
         while (sdl2.pollEvent()) |ev| {
             switch (ev) {
                 .quit => break :main_loop,
-                else => {},
+                .key_up => |key_up| {
+                    if (key_up.keycode == .escape) break :main_loop;
+                },
+                else => {
+                    // std.debug.print("Unhandled event: {}\n\n", .{ev});
+                },
             }
         }
 
+        {
+            qan.clear();
+
+            const tick = 256;
+            const rot = tlate.makeRotationZ(2 * std.math.pi / @intToFloat(f64, tick));
+            const shrF = @sin(frame / 20.0);
+            const shr = tlate.makeShearing(0, 0, shrF, 0, 0, 0);
+            const anchor = tlate.makeTranslation(512 + 128 * @cos(frame / 4), 256 + 128 * @sin(frame / 4), 0);
+            var clock_hand = Point.init(0, -128, 0);
+
+            var i: usize = 0;
+            while (i < tick) : (i += 1) {
+                const p = anchor.mult(shr).mult(clock_hand);
+                qan.write(Color.init(0, 1, 1), @floatToInt(i64, p.x()), @floatToInt(i64, p.y()));
+                clock_hand = rot.mult(clock_hand);
+            }
+        }
+
+        try imgio.encodeQanvasAsQixelUpdate(qan, qix_tex);
+        try imgio.encodeQixelsAsSdlUpdate(qix_tex, &sdl_tex, @intCast(u32, qan.width));
+
         try sdl_renderer.copy(sdl_tex, null, null);
         sdl_renderer.present();
-        sdl2.delay(7); // ~144hz
     }
 }
 

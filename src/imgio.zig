@@ -17,20 +17,32 @@ pub fn encodeQanvasAsQoi(qan: Qanvas, alctr: std.mem.Allocator) ![]u8 {
     return try qoi.encode(qixels, alctr, @intCast(u32, qan.width), @intCast(u32, qan.height), .rgb, .all_linear);
 }
 
-pub fn encodeQanvasAsSdl(qan: Qanvas, alctr: std.mem.Allocator, renderer: sdl2.Renderer) !sdl2.Texture {
+pub fn encodeQanvasAsQixel(qan: Qanvas, alctr: std.mem.Allocator) ![]qoi.Qixel {
     var qixels = try alctr.alloc(qoi.Qixel, qan.pixels.len);
-    defer alctr.free(qixels);
+    errdefer alctr.free(qixels);
 
-    for (qixels) |*q, i| {
+    try encodeQanvasAsQixelUpdate(qan, qixels);
+
+    return qixels;
+}
+
+pub fn encodeQanvasAsQixelUpdate(qan: Qanvas, to_update: []qoi.Qixel) !void {
+    for (to_update) |*q, i| {
         q.* = qoi.Qixel.fromColor(qan.pixels[i]);
     }
+}
 
-    var tex = try sdl2.createTexture(renderer, .abgr8888, .static, qan.width, qan.height);
+pub fn encodeQixelsAsSdl(qix: []qoi.Qixel, renderer: sdl2.Renderer, width: u32, height: u32) !sdl2.Texture {
+    var tex = try sdl2.createTexture(renderer, .abgr8888, .static, width, height);
     errdefer tex.destroy();
 
-    try tex.update(@ptrCast(*[]u8, &qixels).*, qan.width * @sizeOf(qoi.Qixel), null);
+    try encodeQixelsAsSdlUpdate(qix, &tex, width);
 
     return tex;
+}
+
+pub fn encodeQixelsAsSdlUpdate(qix: []qoi.Qixel, tex: *sdl2.Texture, width: u32) !void {
+    try tex.update(@ptrCast(*const []u8, &qix).*, width * @sizeOf(qoi.Qixel), null);
 }
 
 pub fn saveBufAsFile(buf: []const u8, filename: []const u8) !void {
