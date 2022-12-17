@@ -2,7 +2,12 @@ const std = @import("std");
 const sdl2 = @import("sdl2");
 
 const imgio = @import("imgio.zig");
-const tlate = @import("transform.zig");
+const trans = @import("transform.zig");
+const intx = @import("intersect.zig");
+
+const World = @import("world.zig").World;
+const Ray = @import("ray.zig").Ray;
+const Sphere = @import("sphere.zig").Sphere;
 
 const Point = @import("tuple.zig").Point;
 const Qanvas = @import("qanvas.zig").Qanvas;
@@ -14,7 +19,7 @@ const gpa = gpa_impl.allocator();
 pub fn main() !void {
     defer if (!gpa_impl.detectLeaks()) std.debug.print("(No leaks)\n", .{});
 
-    var qan = try Qanvas.init(gpa, 1024, 512);
+    var qan = try Qanvas.init(gpa, 512, 512);
     defer qan.deinit();
 
     try sdl2.init(.{
@@ -38,6 +43,44 @@ pub fn main() !void {
 
     var sdl_renderer = try sdl2.createRenderer(sdl_window, null, .{ .accelerated = true });
     defer sdl_renderer.destroy();
+
+    {
+        std.debug.print("rendering...\n", .{});
+
+        var prog_ctx = std.Progress{};
+        var prog = prog_ctx.start("Pixels", 512 * 512);
+
+        var world = World.init(gpa);
+        defer world.deinit();
+
+        var sph = world.add(Sphere);
+        var sphptr = world.get(Sphere, sph);
+
+        const camera = Point.init(0, 0, -5);
+
+        var aim_y: f64 = -1.5;
+        while (aim_y < 1.5) : (aim_y += (3.0 / 512.0)) {
+            var aim_x: f64 = -1.5;
+            while (aim_x < 1.5) : (aim_x += (3.0 / 512.0)) {
+                const aim_ray = Ray.init(camera, Point.init(aim_x, aim_y, 1.1).minus(camera));
+
+                const xs = intx.intersect(sph, sphptr.*, aim_ray, gpa);
+                defer xs.deinit();
+
+                // std.debug.print("{d: <4.3} {d: <4.3}", .{ aim_x, aim_y });
+                if (xs.hit()) |_| {
+                    const pix_x = @floatToInt(i64, (1.5 + aim_x) / 3.0 * 512.0);
+                    const pix_y = @floatToInt(i64, (1.5 + aim_y) / 3.0 * 512.0);
+
+                    qan.write(Color.init(1, 0, 0), pix_x, pix_y);
+                }
+
+                prog.completeOne();
+            }
+        }
+
+        std.debug.print("done.\n", .{});
+    }
 
     // pipeline is
     // qanvas -> qixels -> sdl texture
@@ -64,24 +107,6 @@ pub fn main() !void {
                 else => {
                     // std.debug.print("Unhandled event: {}\n\n", .{ev});
                 },
-            }
-        }
-
-        {
-            qan.clear();
-
-            const tick = 256;
-            const rot = tlate.makeRotationZ(2 * std.math.pi / @intToFloat(f64, tick));
-            const shrF = @sin(frame / 20.0);
-            const shr = tlate.makeShearing(0, 0, shrF, 0, 0, 0);
-            const anchor = tlate.makeTranslation(512 + 128 * @cos(frame / 4), 256 + 128 * @sin(frame / 4), 0);
-            var clock_hand = Point.init(0, -128, 0);
-
-            var i: usize = 0;
-            while (i < tick) : (i += 1) {
-                const p = anchor.mult(shr).mult(clock_hand);
-                qan.write(Color.init(0, 1, 1), @floatToInt(i64, p.x()), @floatToInt(i64, p.y()));
-                clock_hand = rot.mult(clock_hand);
             }
         }
 
