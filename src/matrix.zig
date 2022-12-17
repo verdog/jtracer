@@ -169,7 +169,10 @@ pub fn Matrix(comptime _rows: usize, comptime _cols: usize) type {
         }
 
         pub fn inverted(self: This) !This {
-            if (!self.isInvertible()) return error.NotInvertible;
+            if (!self.isInvertible()) {
+                std.debug.print("{}\n", .{self.determinant()});
+                return error.NotInvertible;
+            }
 
             var cofacts = blk: {
                 var result = self.vec;

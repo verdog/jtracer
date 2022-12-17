@@ -4,7 +4,8 @@ const Tuple = @import("tuple.zig").Tuple;
 const Vector = @import("tuple.zig").Vector;
 const Point = @import("tuple.zig").Point;
 
-const Sphere = @import("sphere.zig").Sphere;
+const mtx = @import("matrix.zig");
+const trans = @import("transform.zig");
 
 pub const Ray = struct {
     origin: Tuple,
@@ -24,38 +25,19 @@ pub const Ray = struct {
         return self.origin.plus(self.direction.scaled(t));
     }
 
+    pub fn transformed(self: This, matrix: mtx.Matrix(4, 4)) This {
+        return .{
+            .origin = matrix.mult(self.origin),
+            .direction = matrix.mult(self.direction),
+        };
+    }
+
     const This = @This();
 };
 
-// TODO make this interface more general
-pub fn intersect(sphere: Sphere, ray: Ray) []f64 {
-    // TODO replace this
-    var gpa_impl = std.heap.GeneralPurposeAllocator(.{}){};
-    const gpa = gpa_impl.allocator();
-
-    // for now, spheres are centered at the origin
-    _ = sphere;
-    const sphere_to_ray = ray.origin.minus(Point.init(0, 0, 0));
-
-    const a = ray.direction.dot(ray.direction);
-    const b = 2 * ray.direction.dot(sphere_to_ray);
-    const c = sphere_to_ray.dot(sphere_to_ray) - 1;
-
-    const discriminant = b * b - 4 * a * c;
-
-    if (discriminant < 0) return &.{}; // XXX danger?
-
-    var intersections = gpa.alloc(f64, 2) catch unreachable;
-
-    intersections[0] = (-b - @sqrt(discriminant)) / (2 * a);
-    intersections[1] = (-b + @sqrt(discriminant)) / (2 * a);
-
-    return intersections;
-}
-
 const expect = std.testing.expect;
 
-test "Ceating and querying a ray" {
+test "Creating and querying a ray" {
     const origin = Point.init(1, 2, 3);
     const direction = Vector.init(4, 5, 6);
 
@@ -74,55 +56,20 @@ test "Computing a point from a distance" {
     try expect(ray.position(2.5).equals(Point.init(4.5, 3, 4)));
 }
 
-test "A ray intersects a sphere at two points" {
-    const ray = Ray.init(Point.init(0, 0, -5), Vector.init(0, 0, 1));
-    const sphere = Sphere.init();
+test "Translating a ray" {
+    const ray = Ray.init(Point.init(1, 2, 3), Vector.init(0, 1, 0));
+    const m = trans.makeTranslation(3, 4, 5);
+    const ray2 = ray.transformed(m);
 
-    const xs = intersect(sphere, ray);
-
-    try expect(xs.len == 2);
-    try expect(xs[0] == 4.0);
-    try expect(xs[1] == 6.0);
+    try expect(ray2.origin.equals(Point.init(4, 6, 8)));
+    try expect(ray2.direction.equals(Vector.init(0, 1, 0)));
 }
 
-test "A ray intersects a sphere at a tangent" {
-    const ray = Ray.init(Point.init(0, 1, -5), Vector.init(0, 0, 1));
-    const sphere = Sphere.init();
+test "Scaling a ray" {
+    const ray = Ray.init(Point.init(1, 2, 3), Vector.init(0, 1, 0));
+    const m = trans.makeScaling(2, 3, 4);
+    const ray2 = ray.transformed(m);
 
-    const xs = intersect(sphere, ray);
-
-    try expect(xs.len == 2);
-    try expect(xs[0] == 5.0);
-    try expect(xs[1] == 5.0);
-}
-
-test "A ray misses a sphere" {
-    const ray = Ray.init(Point.init(0, 2, -5), Vector.init(0, 0, 1));
-    const sphere = Sphere.init();
-
-    const xs = intersect(sphere, ray);
-
-    try expect(xs.len == 0);
-}
-
-test "A ray originates inside a sphere" {
-    const ray = Ray.init(Point.init(0, 0, 0), Vector.init(0, 0, 1));
-    const sphere = Sphere.init();
-
-    const xs = intersect(sphere, ray);
-
-    try expect(xs.len == 2);
-    try expect(xs[0] == -1.0);
-    try expect(xs[1] == 1.0);
-}
-
-test "A sphere behind a ray" {
-    const ray = Ray.init(Point.init(0, 0, 5), Vector.init(0, 0, 1));
-    const sphere = Sphere.init();
-
-    const xs = intersect(sphere, ray);
-
-    try expect(xs.len == 2);
-    try expect(xs[0] == -6.0);
-    try expect(xs[1] == -4.0);
+    try expect(ray2.origin.equals(Point.init(2, 6, 12)));
+    try expect(ray2.direction.equals(Vector.init(0, 3, 0)));
 }

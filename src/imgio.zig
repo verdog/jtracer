@@ -1,4 +1,4 @@
-//! functions to save qanvas objects to disk as qoi images
+//! functions to change one image format to another
 
 const std = @import("std");
 const sdl2 = @import("sdl2");

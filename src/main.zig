@@ -103,5 +103,7 @@ test {
     _ = @import("transform.zig");
     _ = @import("ray.zig");
     _ = @import("sphere.zig");
+    _ = @import("world.zig");
     _ = @import("intersect.zig");
+    _ = @import("end2end.zig");
 }
