@@ -10,6 +10,7 @@ const Ray = @import("ray.zig").Ray;
 const Sphere = @import("sphere.zig").Sphere;
 
 const Point = @import("tuple.zig").Point;
+const Vector = @import("tuple.zig").Vector;
 const Qanvas = @import("qanvas.zig").Qanvas;
 const Color = @import("color.zig").Color;
 
@@ -19,7 +20,7 @@ const gpa = gpa_impl.allocator();
 pub fn main() !void {
     defer if (!gpa_impl.detectLeaks()) std.debug.print("(No leaks)\n", .{});
 
-    var qan = try Qanvas.init(gpa, 512, 512);
+    var qan = try Qanvas.init(gpa, 600, 400);
     defer qan.deinit();
 
     try sdl2.init(.{
@@ -48,7 +49,7 @@ pub fn main() !void {
         std.debug.print("rendering...\n", .{});
 
         var prog_ctx = std.Progress{};
-        var prog = prog_ctx.start("Pixels", 512 * 512);
+        var prog = prog_ctx.start("Pixels", qan.width * qan.height);
 
         var world = World.init(gpa);
         defer world.deinit();
@@ -56,28 +57,36 @@ pub fn main() !void {
         var sph = world.add(Sphere);
         var sphptr = world.get(Sphere, sph);
 
-        const camera = Point.init(0, 0, -5);
+        const camera = Point.init(0, 0, -3);
+        const heading = Vector.init(0, 0, 1).normalized();
+        const window_center = camera.plus(heading);
 
-        var aim_y: f64 = -1.5;
-        while (aim_y < 1.5) : (aim_y += (3.0 / 512.0)) {
-            var aim_x: f64 = -1.5;
-            while (aim_x < 1.5) : (aim_x += (3.0 / 512.0)) {
-                const aim_ray = Ray.init(camera, Point.init(aim_x, aim_y, 1.1).minus(camera));
+        var pix_y: i64 = 0;
+        while (pix_y < qan.height) : (pix_y += 1) {
+            var pix_x: i64 = 0;
+            while (pix_x < qan.width) : (pix_x += 1) {
+                const pixels_per_unit = 512;
+                // get point on window
+                const pix_x_w = @intToFloat(f64, pix_x - @divTrunc(@intCast(i64, qan.width), 2)) / pixels_per_unit;
+                const pix_y_w = @intToFloat(f64, pix_y - @divTrunc(@intCast(i64, qan.height), 2)) / pixels_per_unit;
+                // note the -pix_y_w. pixel space y increases downwards
+                // but object space y increases upwards
+                const aim_point = window_center.plus(Vector.init(pix_x_w, -pix_y_w, 0));
+                const aim_ray = Ray.init(camera, aim_point.minus(camera));
 
                 const xs = intx.intersect(sph, sphptr.*, aim_ray, gpa);
                 defer xs.deinit();
 
                 // std.debug.print("{d: <4.3} {d: <4.3}", .{ aim_x, aim_y });
                 if (xs.hit()) |_| {
-                    const pix_x = @floatToInt(i64, (1.5 + aim_x) / 3.0 * 512.0);
-                    const pix_y = @floatToInt(i64, (1.5 + aim_y) / 3.0 * 512.0);
-
                     qan.write(Color.init(1, 0, 0), pix_x, pix_y);
                 }
 
                 prog.completeOne();
             }
         }
+
+        prog.end();
 
         std.debug.print("done.\n", .{});
     }
