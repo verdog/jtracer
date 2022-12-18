@@ -3,7 +3,7 @@ const sdl2 = @import("sdl2");
 
 const imgio = @import("imgio.zig");
 const trans = @import("transform.zig");
-const intx = @import("intersect.zig");
+const rndr = @import("render.zig");
 
 const World = @import("world.zig").World;
 const Ray = @import("ray.zig").Ray;
@@ -45,52 +45,6 @@ pub fn main() !void {
     var sdl_renderer = try sdl2.createRenderer(sdl_window, null, .{ .accelerated = true });
     defer sdl_renderer.destroy();
 
-    {
-        std.debug.print("rendering...\n", .{});
-
-        var prog_ctx = std.Progress{};
-        var prog = prog_ctx.start("Pixels", qan.width * qan.height);
-
-        var world = World.init(gpa);
-        defer world.deinit();
-
-        var sph = world.add(Sphere);
-        var sphptr = world.get(Sphere, sph);
-
-        const camera = Point.init(0, 0, -3);
-        const heading = Vector.init(0, 0, 1).normalized();
-        const window_center = camera.plus(heading);
-
-        var pix_y: i64 = 0;
-        while (pix_y < qan.height) : (pix_y += 1) {
-            var pix_x: i64 = 0;
-            while (pix_x < qan.width) : (pix_x += 1) {
-                const pixels_per_unit = 512;
-                // get point on window
-                const pix_x_w = @intToFloat(f64, pix_x - @divTrunc(@intCast(i64, qan.width), 2)) / pixels_per_unit;
-                const pix_y_w = @intToFloat(f64, pix_y - @divTrunc(@intCast(i64, qan.height), 2)) / pixels_per_unit;
-                // note the -pix_y_w. pixel space y increases downwards
-                // but object space y increases upwards
-                const aim_point = window_center.plus(Vector.init(pix_x_w, -pix_y_w, 0));
-                const aim_ray = Ray.init(camera, aim_point.minus(camera));
-
-                const xs = intx.intersect(sph, sphptr.*, aim_ray, gpa);
-                defer xs.deinit();
-
-                // std.debug.print("{d: <4.3} {d: <4.3}", .{ aim_x, aim_y });
-                if (xs.hit()) |_| {
-                    qan.write(Color.init(1, 0, 0), pix_x, pix_y);
-                }
-
-                prog.completeOne();
-            }
-        }
-
-        prog.end();
-
-        std.debug.print("done.\n", .{});
-    }
-
     // pipeline is
     // qanvas -> qixels -> sdl texture
 
@@ -102,28 +56,47 @@ pub fn main() !void {
 
     var frame: f64 = 0;
 
-    main_loop: while (true) {
-        defer {
-            frame += 1;
-        }
+    {
+        var world = World.init(gpa);
+        defer world.deinit();
 
-        while (sdl2.pollEvent()) |ev| {
-            switch (ev) {
-                .quit => break :main_loop,
-                .key_up => |key_up| {
-                    if (key_up.keycode == .escape) break :main_loop;
-                },
-                else => {
-                    // std.debug.print("Unhandled event: {}\n\n", .{ev});
-                },
+        _ = world.add(Sphere);
+
+        const camera = Point.init(0, 0, -3);
+        const heading = Vector.init(0, 0, 1).normalized();
+
+        // zig fmt: off
+        const render_thread = std.Thread.spawn(.{}, rndr.startRenderEngine,
+            .{world, camera, heading, &qan, gpa}
+        ) catch unreachable;
+        render_thread.detach();
+        // zig fmt: on
+
+        main_loop: while (true) {
+            defer {
+                frame += 1;
             }
+
+            while (sdl2.pollEvent()) |ev| {
+                switch (ev) {
+                    .quit => break :main_loop,
+                    .key_up => |key_up| {
+                        if (key_up.keycode == .escape) break :main_loop;
+                    },
+                    else => {
+                        // std.debug.print("Unhandled event: {}\n\n", .{ev});
+                    },
+                }
+            }
+
+            try imgio.encodeQanvasAsQixelUpdate(qan, qix_tex);
+            try imgio.encodeQixelsAsSdlUpdate(qix_tex, &sdl_tex, @intCast(u32, qan.width));
+
+            try sdl_renderer.copy(sdl_tex, null, null);
+            sdl_renderer.present();
+
+            sdl2.delay(200);
         }
-
-        try imgio.encodeQanvasAsQixelUpdate(qan, qix_tex);
-        try imgio.encodeQixelsAsSdlUpdate(qix_tex, &sdl_tex, @intCast(u32, qan.width));
-
-        try sdl_renderer.copy(sdl_tex, null, null);
-        sdl_renderer.present();
     }
 }
 
