@@ -17,6 +17,12 @@ pub const Color = struct {
         return max_diff <= mymath.floatTolerance;
     }
 
+    pub fn equalsTolerance(self: This, other: This, tolerance: usize) bool {
+        const diff = @fabs(self.vec - other.vec);
+        const max_diff = @reduce(.Max, diff);
+        return max_diff <= std.math.floatEps(f64) * @intToFloat(f64, tolerance);
+    }
+
     pub fn red(self: This) f64 {
         return self.vec[0];
     }

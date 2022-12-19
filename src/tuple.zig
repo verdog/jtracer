@@ -18,6 +18,12 @@ pub const Tuple = struct {
         return max_diff <= mymath.floatTolerance;
     }
 
+    pub fn equalsTolerance(self: This, other: This, tolerance: usize) bool {
+        const diff = @fabs(self.vec - other.vec);
+        const max_diff = @reduce(.Max, diff);
+        return max_diff <= std.math.floatEps(f64) * @intToFloat(f64, tolerance);
+    }
+
     pub fn plus(self: This, other: This) This {
         const t = This{ .vec = self.vec + other.vec };
         return t;
@@ -46,6 +52,7 @@ pub const Tuple = struct {
     }
 
     pub fn normalized(self: This) This {
+        std.debug.assert(self.magnitude() != 0);
         return This{ .vec = self.vec / @splat(4, self.magnitude()) };
     }
 
@@ -62,6 +69,12 @@ pub const Tuple = struct {
         const first = @Vector(4, f64){ self.y() * other.z(), self.z() * other.x(), self.x() * other.y(), 0 };
         const second = @Vector(4, f64){ self.z() * other.y(), self.x() * other.z(), self.y() * other.x(), 0 };
         return This{ .vec = first - second };
+    }
+
+    pub fn reflected(self: This, normal: This) This {
+        const two: f64 = 2.0;
+        const vtwo = @splat(4, two);
+        return This{ .vec = self.vec - normal.vec * vtwo * @splat(4, @reduce(.Add, self.vec * normal.vec)) };
     }
 
     pub fn x(self: This) f64 {
@@ -362,4 +375,18 @@ test "Vector.cross" {
     const u = Vector.init(2, 3, 4);
     try expect(v.cross(u).equals(Vector.init(-1, 2, -1)));
     try expect(u.cross(v).equals(Vector.init(1, -2, 1)));
+}
+
+test "Reflecting a vector at 45d" {
+    const v = Vector.init(1, -1, 0);
+    const n = Vector.init(0, 1, 0);
+    const r = v.reflected(n);
+    try expect(r.equals(Vector.init(1, 1, 0)));
+}
+
+test "Reflecting a vector off a slanted surfact" {
+    const v = Vector.init(0, -1, 0);
+    const n = Vector.init(@sqrt(2.0) / 2.0, @sqrt(2.0) / 2.0, 0);
+    const r = v.reflected(n);
+    try expect(r.equals(Vector.init(1, 0, 0)));
 }

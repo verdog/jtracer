@@ -54,6 +54,23 @@ pub const Intersections = struct {
         self.ixs.deinit();
     }
 
+    // TODO make this interface more general
+    pub fn intersect(self: *This, vptr: VolPtr, sphere: Sphere, ray: Ray) void {
+        const td_ray = ray.transformed(sphere.transform.inverted() catch unreachable);
+        const sphere_to_ray = td_ray.origin.minus(Point.init(0, 0, 0));
+
+        const a = td_ray.direction.dot(td_ray.direction);
+        const b = 2 * td_ray.direction.dot(sphere_to_ray);
+        const c = sphere_to_ray.dot(sphere_to_ray) - 1;
+
+        const discriminant = b * b - 4 * a * c;
+
+        if (discriminant < 0) return;
+
+        self.ixs.append(Intersection.init((-b - @sqrt(discriminant)) / (2 * a), vptr)) catch unreachable;
+        self.ixs.append(Intersection.init((-b + @sqrt(discriminant)) / (2 * a), vptr)) catch unreachable;
+    }
+
     pub fn clear(self: *This) void {
         self.ixs.clearRetainingCapacity();
     }
@@ -78,23 +95,6 @@ pub const Intersections = struct {
 
     const This = @This();
 };
-
-// TODO make this interface more general
-pub fn intersect(vptr: VolPtr, sphere: Sphere, ray: Ray, ixs: *Intersections) void {
-    const td_ray = ray.transformed(sphere.transform.inverted() catch unreachable);
-    const sphere_to_ray = td_ray.origin.minus(Point.init(0, 0, 0));
-
-    const a = td_ray.direction.dot(td_ray.direction);
-    const b = 2 * td_ray.direction.dot(sphere_to_ray);
-    const c = sphere_to_ray.dot(sphere_to_ray) - 1;
-
-    const discriminant = b * b - 4 * a * c;
-
-    if (discriminant < 0) return;
-
-    ixs.ixs.append(Intersection.init((-b - @sqrt(discriminant)) / (2 * a), vptr)) catch unreachable;
-    ixs.ixs.append(Intersection.init((-b + @sqrt(discriminant)) / (2 * a), vptr)) catch unreachable;
-}
 
 const expect = std.testing.expect;
 
@@ -128,8 +128,9 @@ test "A ray intersects a sphere at two points" {
     const sphere = Sphere.init();
     const vptr = VolPtr{ .sphere_idx = 0 };
 
-    const xs = intersect(vptr, sphere, ray, alctr);
+    var xs = Intersections.init(alctr, .{});
     defer xs.deinit();
+    xs.intersect(vptr, sphere, ray);
 
     try expect(xs.ixs.items.len == 2);
     try expect(xs.ixs.items[0].t == 4.0);
@@ -142,8 +143,9 @@ test "A ray intersects a sphere at a tangent" {
     const sphere = Sphere.init();
     const vptr = VolPtr{ .sphere_idx = 0 };
 
-    const xs = intersect(vptr, sphere, ray, alctr);
+    var xs = Intersections.init(alctr, .{});
     defer xs.deinit();
+    xs.intersect(vptr, sphere, ray);
 
     try expect(xs.ixs.items.len == 2);
     try expect(xs.ixs.items[0].t == 5.0);
@@ -156,7 +158,9 @@ test "A ray misses a sphere" {
     const sphere = Sphere.init();
     const vptr = VolPtr{ .sphere_idx = 0 };
 
-    const xs = intersect(vptr, sphere, ray, alctr);
+    var xs = Intersections.init(alctr, .{});
+    defer xs.deinit();
+    xs.intersect(vptr, sphere, ray);
 
     try expect(xs.ixs.items.len == 0);
 }
@@ -167,8 +171,9 @@ test "A ray originates inside a sphere" {
     const sphere = Sphere.init();
     const vptr = VolPtr{ .sphere_idx = 0 };
 
-    const xs = intersect(vptr, sphere, ray, alctr);
+    var xs = Intersections.init(alctr, .{});
     defer xs.deinit();
+    xs.intersect(vptr, sphere, ray);
 
     try expect(xs.ixs.items.len == 2);
     try expect(xs.ixs.items[0].t == -1.0);
@@ -181,8 +186,9 @@ test "A sphere behind a ray" {
     const sphere = Sphere.init();
     const vptr = VolPtr{ .sphere_idx = 0 };
 
-    const xs = intersect(vptr, sphere, ray, alctr);
+    var xs = Intersections.init(alctr, .{});
     defer xs.deinit();
+    xs.intersect(vptr, sphere, ray);
 
     try expect(xs.ixs.items.len == 2);
     try expect(xs.ixs.items[0].t == -6.0);
@@ -197,8 +203,9 @@ test "Intersect a scaled sphere with a ray" {
 
     s.transform = trans.makeScaling(2, 2, 2);
 
-    const xs = intersect(vptr, s, ray, alctr);
+    var xs = Intersections.init(alctr, .{});
     defer xs.deinit();
+    xs.intersect(vptr, s, ray);
 
     try expect(xs.ixs.items.len == 2);
     try expect(xs.ixs.items[0].t == 3.0);
@@ -213,8 +220,9 @@ test "Intersect a translated sphere with a ray" {
 
     s.transform = trans.makeTranslation(5, 0, 0);
 
-    const xs = intersect(vptr, s, ray, alctr);
+    var xs = Intersections.init(alctr, .{});
     defer xs.deinit();
+    xs.intersect(vptr, s, ray);
 
     try expect(xs.ixs.items.len == 0);
 }
@@ -225,8 +233,9 @@ test "Intersect sets the object on the intersection" {
     const sph = Sphere.init();
     const vptr = VolPtr{ .sphere_idx = 7 };
 
-    const xs = intersect(vptr, sph, ray, alctr);
+    var xs = Intersections.init(alctr, .{});
     defer xs.deinit();
+    xs.intersect(vptr, sph, ray);
 
     try expect(xs.ixs.items.len == 2);
     try expect(xs.ixs.items[0].vptr.sphere_idx == 7);
@@ -237,7 +246,8 @@ test "The hit, where all intersections have positive t" {
     const alctr = std.testing.allocator;
     const int1 = Intersection.init(1.0, VolPtr{ .sphere_idx = 5 });
     const int2 = Intersection.init(2.0, VolPtr{ .sphere_idx = 5 });
-    const xs = Intersections.init(alctr, .{ int1, int2 });
+
+    var xs = Intersections.init(alctr, .{ int1, int2 });
     defer xs.deinit();
 
     try expect(xs.hit().?.equals(int1));
