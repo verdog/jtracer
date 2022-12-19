@@ -54,6 +54,10 @@ pub const Intersections = struct {
         self.ixs.deinit();
     }
 
+    pub fn clear(self: *This) void {
+        self.ixs.clearRetainingCapacity();
+    }
+
     pub fn hit(self: This) ?Intersection {
         // TODO eventually this should turn into a full-on sort
         var min_positive_t: ?f64 = null;
@@ -76,7 +80,7 @@ pub const Intersections = struct {
 };
 
 // TODO make this interface more general
-pub fn intersect(vptr: VolPtr, sphere: Sphere, ray: Ray, alctr: std.mem.Allocator) Intersections {
+pub fn intersect(vptr: VolPtr, sphere: Sphere, ray: Ray, ixs: *Intersections) void {
     const td_ray = ray.transformed(sphere.transform.inverted() catch unreachable);
     const sphere_to_ray = td_ray.origin.minus(Point.init(0, 0, 0));
 
@@ -86,14 +90,10 @@ pub fn intersect(vptr: VolPtr, sphere: Sphere, ray: Ray, alctr: std.mem.Allocato
 
     const discriminant = b * b - 4 * a * c;
 
-    if (discriminant < 0) return Intersections.init(alctr, .{});
+    if (discriminant < 0) return;
 
-    var intersections = Intersections.init(alctr, .{
-        Intersection.init((-b - @sqrt(discriminant)) / (2 * a), vptr),
-        Intersection.init((-b + @sqrt(discriminant)) / (2 * a), vptr),
-    });
-
-    return intersections;
+    ixs.ixs.append(Intersection.init((-b - @sqrt(discriminant)) / (2 * a), vptr)) catch unreachable;
+    ixs.ixs.append(Intersection.init((-b + @sqrt(discriminant)) / (2 * a), vptr)) catch unreachable;
 }
 
 const expect = std.testing.expect;

@@ -24,16 +24,18 @@ pub const Qanvas = struct {
         return q;
     }
 
+    pub fn backgroundColor(_: This, x: i64, y: i64) Color {
+        // checkerboard pattern
+        return if (@divTrunc(x, 64) & 1 == @divTrunc(y, 64) & 1)
+            Color.init(0.1, 0.1, 0.1)
+        else
+            Color.init(0, 0, 0);
+    }
+
     pub fn clear(self: *This) void {
-        for (self.pixels) |*qix, i| {
-            const xy = self.ithPixelCoords(i);
-            if (@divTrunc(xy.x, 64) & 1 == @divTrunc(xy.y, 64) & 1) {
-                // magenta
-                qix.* = Color.init(0.1, 0.1, 0.1);
-            } else {
-                // black
-                qix.* = Color.init(0, 0, 0);
-            }
+        for (self.pixels) |*qix| {
+            // const xy = self.ithPixelCoords(i);
+            qix.* = Color.init(0.5, 0.5, 0.5);
         }
     }
 

@@ -20,7 +20,7 @@ const gpa = gpa_impl.allocator();
 pub fn main() !void {
     defer if (!gpa_impl.detectLeaks()) std.debug.print("(No leaks)\n", .{});
 
-    var qan = try Qanvas.init(gpa, 600, 400);
+    var qan = try Qanvas.init(gpa, 512, 512);
     defer qan.deinit();
 
     try sdl2.init(.{
@@ -60,14 +60,33 @@ pub fn main() !void {
         var world = World.init(gpa);
         defer world.deinit();
 
-        _ = world.add(Sphere);
+        var sph = world.add(Sphere);
+        var sphptr = world.get(Sphere, sph);
+        sphptr.transform = trans.makeTranslation(0, 1.5, 1);
 
-        const camera = Point.init(0, 0, -3);
-        const heading = Vector.init(0, 0, 1).normalized();
+        sph = world.add(Sphere);
+        sphptr = world.get(Sphere, sph);
+        sphptr.transform = trans.makeTranslation(0, -1.5, 1);
+
+        sph = world.add(Sphere);
+        sphptr = world.get(Sphere, sph);
+        sphptr.transform = trans.makeTranslation(1.5, 0, 1);
+
+        sph = world.add(Sphere);
+        sphptr = world.get(Sphere, sph);
+        sphptr.transform = trans.makeTranslation(-1.5, 0, 1);
+
+        sph = world.add(Sphere);
+        sphptr = world.get(Sphere, sph);
+        sphptr.transform = trans.makeScaling(0.4, 0.4, 0.4);
+        sphptr.transform = sphptr.transform.mult(trans.makeTranslation(0, 0, 1));
+
+        const window_center = Point.init(0, 0, -3);
+        const heading = Vector.init(0, 0, 1);
 
         // zig fmt: off
         const render_thread = std.Thread.spawn(.{}, rndr.startRenderEngine,
-            .{world, camera, heading, &qan, gpa}
+            .{world, window_center, heading, &qan, gpa}
         ) catch unreachable;
         render_thread.detach();
         // zig fmt: on
@@ -95,7 +114,7 @@ pub fn main() !void {
             try sdl_renderer.copy(sdl_tex, null, null);
             sdl_renderer.present();
 
-            sdl2.delay(200);
+            sdl2.delay(17);
         }
     }
 }
