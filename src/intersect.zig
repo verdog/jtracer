@@ -13,6 +13,45 @@ const Sphere = @import("sphere.zig").Sphere;
 const trans = @import("transform.zig");
 const mtx = @import("matrix.zig");
 
+/// get information that will be needed for shading based on an intersection
+/// and the ray that generated it
+pub const HitData = struct {
+    /// the t value of the hit
+    t: f64,
+    /// the volume that was hit
+    vptr: VolPtr,
+    /// the point of the hit in world space
+    point: Tuple,
+    /// the eye vector, going from point to the origin point of the
+    /// ray that generated the intersection
+    eye_vector: Tuple,
+    /// the normal vector, going from the point outwards from the surface
+    /// that was hit
+    normal_vector: Tuple,
+    /// true if the normal vector points towards the inside of the shape
+    inside: bool,
+
+    // TODO fix this interface to somehow work with only the vptr
+    pub fn init(r: Ray, x: Intersection, shape: anytype) This {
+        const point = r.position(x.t);
+        var normal_vector = shape.normalAt(point);
+        const eye_vector = r.direction.scaled(-1);
+        const inside = eye_vector.dot(normal_vector) < 0;
+        if (inside) normal_vector = normal_vector.scaled(-1);
+
+        return .{
+            .t = x.t,
+            .vptr = x.vptr,
+            .point = point,
+            .eye_vector = eye_vector,
+            .normal_vector = normal_vector,
+            .inside = inside,
+        };
+    }
+
+    const This = @This();
+};
+
 pub const Intersection = struct {
     t: f64,
     vptr: VolPtr,
@@ -75,22 +114,30 @@ pub const Intersections = struct {
         self.ixs.clearRetainingCapacity();
     }
 
-    pub fn hit(self: This) ?Intersection {
-        // TODO eventually this should turn into a full-on sort
-        var min_positive_t: ?f64 = null;
-        var min_positive_i: usize = self.ixs.items.len;
-
-        for (self.ixs.items) |x, i| {
-            if (x.t >= 0 and x.t < min_positive_t orelse std.math.floatMax(f64)) {
-                min_positive_t = x.t;
-                min_positive_i = i;
+    /// order interections such that the intersection with the lowest t >= 0
+    /// is at ixs.items[0], sorted in increasing t order. intersections with
+    /// t < 0 get moved to the end in an unspecified order.
+    pub fn order(self: *This) void {
+        const lt = struct {
+            fn lt(_: void, lhs: Intersection, rhs: Intersection) bool {
+                // effective lhs t
+                const eff_lhs_t = if (lhs.t >= 0) lhs.t else std.math.floatMax(f64);
+                const eff_rhs_t = if (rhs.t >= 0) rhs.t else std.math.floatMax(f64);
+                return eff_lhs_t < eff_rhs_t;
             }
-        }
+        }.lt;
 
-        if (min_positive_i < self.ixs.items.len)
-            return self.ixs.items[min_positive_i]
-        else
+        std.sort.insertionSort(Intersection, self.ixs.items, {}, lt);
+    }
+
+    // TODO should hit() have side effects?
+    pub fn hit(self: *This) ?Intersection {
+        self.order();
+        if (self.ixs.items.len > 0 and self.ixs.items[0].t >= 0) {
+            return self.ixs.items[0];
+        } else {
             return null;
+        }
     }
 
     const This = @This();
@@ -257,7 +304,7 @@ test "The hit, where some intersections have negative t" {
     const alctr = std.testing.allocator;
     const int1 = Intersection.init(-1.0, VolPtr{ .sphere_idx = 5 });
     const int2 = Intersection.init(1.0, VolPtr{ .sphere_idx = 5 });
-    const xs = Intersections.init(alctr, .{ int1, int2 });
+    var xs = Intersections.init(alctr, .{ int1, int2 });
     defer xs.deinit();
 
     try expect(xs.hit().?.equals(int2));
@@ -267,7 +314,7 @@ test "The hit, where all intersections have negative t" {
     const alctr = std.testing.allocator;
     const int1 = Intersection.init(-1.0, VolPtr{ .sphere_idx = 5 });
     const int2 = Intersection.init(-1.0, VolPtr{ .sphere_idx = 5 });
-    const xs = Intersections.init(alctr, .{ int1, int2 });
+    var xs = Intersections.init(alctr, .{ int1, int2 });
     defer xs.deinit();
 
     try expect(xs.hit() == null);
@@ -279,8 +326,43 @@ test "The hit is always the lowest nonnegative intersection" {
     const int2 = Intersection.init(7.0, VolPtr{ .sphere_idx = 5 });
     const int3 = Intersection.init(-3.0, VolPtr{ .sphere_idx = 5 });
     const int4 = Intersection.init(2.0, VolPtr{ .sphere_idx = 5 });
-    const xs = Intersections.init(alctr, .{ int1, int2, int3, int4 });
+    var xs = Intersections.init(alctr, .{ int1, int2, int3, int4 });
     defer xs.deinit();
 
     try expect(xs.hit().?.equals(int4));
+}
+
+test "HitData" {
+    const r = Ray.init(Point.init(0, 0, -5), Vector.init(0, 0, 1));
+    const s = Sphere.init();
+    const x = Intersection.init(4.0, VolPtr{ .sphere_idx = 0 });
+    const data = HitData.init(r, x, s);
+
+    try expect(data.t == x.t);
+    try expect(std.meta.eql(data.vptr, VolPtr{ .sphere_idx = 0 }));
+    try expect(data.point.equals(Point.init(0, 0, -1)));
+    try expect(data.eye_vector.equals(Vector.init(0, 0, -1)));
+    try expect(data.normal_vector.equals(Vector.init(0, 0, -1)));
+}
+
+test "HitData: eye vector outside of the hit shape" {
+    const r = Ray.init(Point.init(0, 0, -5), Vector.init(0, 0, 1));
+    const s = Sphere.init();
+    const x = Intersection.init(4.0, VolPtr{ .sphere_idx = 0 });
+    const data = HitData.init(r, x, s);
+
+    try expect(data.inside == false);
+}
+
+test "HitData: eye vector inside of the hit shape" {
+    const r = Ray.init(Point.init(0, 0, 0), Vector.init(0, 0, 1));
+    const s = Sphere.init();
+    const x = Intersection.init(1.0, VolPtr{ .sphere_idx = 0 });
+    const data = HitData.init(r, x, s);
+
+    try expect(data.point.equals(Point.init(0, 0, 1)));
+    try expect(data.inside == true);
+    try expect(data.eye_vector.equals(Vector.init(0, 0, -1)));
+    // normal would have been (0, 0, 1), but it is inverted since inside == true
+    try expect(data.normal_vector.equals(Vector.init(0, 0, -1)));
 }

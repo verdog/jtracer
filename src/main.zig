@@ -9,6 +9,7 @@ const World = @import("world.zig").World;
 const Ray = @import("ray.zig").Ray;
 const Sphere = @import("sphere.zig").Sphere;
 const PointLight = @import("light.zig").PointLight;
+const Camera = @import("world.zig").Camera;
 
 const Point = @import("tuple.zig").Point;
 const Vector = @import("tuple.zig").Vector;
@@ -21,7 +22,7 @@ const gpa = gpa_impl.allocator();
 pub fn main() !void {
     defer if (!gpa_impl.detectLeaks()) std.debug.print("(No leaks)\n", .{});
 
-    var qan = try Qanvas.init(gpa, 1024, 512);
+    var qan = try Qanvas.init(gpa, 1024, 800);
     defer qan.deinit();
 
     try sdl2.init(.{
@@ -61,39 +62,35 @@ pub fn main() !void {
         var world = World.init(gpa);
         defer world.deinit();
 
-        var lgt = world.add(PointLight);
-        var lgtptr = world.get(PointLight, lgt);
-        lgtptr.position = Point.init(-0.5, 1.2, -1.1);
-        lgtptr.intensity = Color.init(1, 1, 1);
+        var lgt = world.addLight(PointLight);
+        lgt.ptr.position = Point.init(-0.5, 2, 1);
+        lgt.ptr.intensity = Color.init(1, 1, 1);
 
-        var sph = world.add(Sphere);
-        var sphptr = world.get(Sphere, sph);
-        sphptr.material.color = Color.init(1, 0, 0);
-        sphptr.transform = sphptr.transform.mult(trans.makeTranslation(-3, 0, 1));
-        sphptr.transform = sphptr.transform.mult(trans.makeScaling(1, 2, 1));
+        var z: f64 = -0.5;
+        while (z < 7.00) : (z += 2.5) {
+            var sph = world.addVolume(Sphere);
+            sph.ptr.material.color = Color.init(1, 0, 0);
+            sph.ptr.transform = sph.ptr.transform.mult(trans.makeTranslation(-2.5, 0, z));
 
-        sph = world.add(Sphere);
-        sphptr = world.get(Sphere, sph);
-        sphptr.material.color = Color.init(0, 1, 0);
-        sphptr.transform = sphptr.transform.mult(trans.makeTranslation(0, 0, 1));
-        sphptr.transform = sphptr.transform.mult(trans.makeScaling(1, 1, 1));
+            sph = world.addVolume(Sphere);
+            sph.ptr.material.color = Color.init(0, 1, 0);
+            sph.ptr.transform = sph.ptr.transform.mult(trans.makeTranslation(0, 0, z));
+            sph.ptr.material.specular = 0.1;
 
-        sph = world.add(Sphere);
-        sphptr = world.get(Sphere, sph);
-        sphptr.material.color = Color.init(0, 0, 1);
-        sphptr.transform = sphptr.transform.mult(trans.makeTranslation(3, 0, 1));
-        sphptr.transform = sphptr.transform.mult(trans.makeRotationZ(std.math.pi / 4.0));
-        sphptr.transform = sphptr.transform.mult(trans.makeScaling(1, 0.4, 1));
+            sph = world.addVolume(Sphere);
+            sph.ptr.material.color = Color.init(0, 0, 1);
+            sph.ptr.material.specular = 0;
+            sph.ptr.transform = sph.ptr.transform.mult(trans.makeTranslation(2.5, 0, z));
+        }
 
-        const window_center = Point.init(0, 0, -3);
-        const heading = Vector.init(0, 0, 1);
+        var cam = Camera.init(@intCast(i64, qan.width), @intCast(i64, qan.height), std.math.pi / 3.0);
+        const from = Point.init(0, 4, -2);
+        const to = Point.init(0, 0, 1);
+        const up = Vector.init(0, 1, 0);
+        cam.transform = trans.makeView(from, to, up);
 
-        // zig fmt: off
-        const render_thread = std.Thread.spawn(.{}, rndr.startRenderEngine,
-            .{world, window_center, heading, &qan, gpa}
-        ) catch unreachable;
-        render_thread.detach();
-        // zig fmt: on
+        var thr = std.Thread.spawn(.{}, World.render, .{ world, cam, &qan, gpa }) catch unreachable;
+        thr.detach();
 
         main_loop: while (true) {
             defer {

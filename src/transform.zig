@@ -6,6 +6,7 @@ const Matrix = @import("matrix.zig").Matrix;
 const Mat4 = Matrix(4, 4);
 const Mat3 = Matrix(3, 3);
 
+const Tuple = @import("tuple.zig").Tuple;
 const Point = @import("tuple.zig").Point;
 const Vector = @import("tuple.zig").Vector;
 
@@ -65,7 +66,28 @@ pub fn makeShearing(xy: f64, xz: f64, yx: f64, yz: f64, zx: f64, zy: f64) Mat4 {
     });
 }
 
+pub fn makeView(from: Tuple, to: Tuple, up: Tuple) Mat4 {
+    // page 99-100
+    std.debug.assert(from.isPoint());
+    std.debug.assert(to.isPoint());
+    std.debug.assert(up.isVector());
+
+    const forward = to.minus(from).normalized();
+    const left = forward.cross(up.normalized());
+    const true_up = left.cross(forward);
+
+    const orientation = Mat4.init(.{
+        left.x(),     left.y(),     left.z(),     0,
+        true_up.x(),  true_up.y(),  true_up.z(),  0,
+        -forward.x(), -forward.y(), -forward.z(), 0,
+        0,            0,            0,            1,
+    });
+
+    return orientation.mult(makeTranslation(-from.x(), -from.y(), -from.z()));
+}
+
 const expect = std.testing.expect;
+const print = @import("u.zig").print;
 
 test "Multiplying by a translation matrix" {
     const t = makeTranslation(5, -3, 2);
@@ -267,4 +289,51 @@ test "Chained transformations are applied in reverse order" {
     p = final.mult(p);
 
     try expect(p.equals(Point.init(15, 0, 7)));
+}
+
+test "Default view transform" {
+    const from = Point.init(0, 0, 0);
+    const to = Point.init(0, 0, -1);
+    const up = Vector.init(0, 1, 0);
+
+    const t = makeView(from, to, up);
+
+    try expect(t.equals(Mat4.identity()));
+}
+
+test "View transform looking in positive Z" {
+    const from = Point.init(0, 0, 0);
+    const to = Point.init(0, 0, 1);
+    const up = Vector.init(0, 1, 0);
+
+    const t = makeView(from, to, up);
+
+    try expect(t.equals(makeScaling(-1, 1, -1)));
+}
+
+test "The view transform moves the world, not the eye" {
+    const from = Point.init(0, 0, 8);
+    const to = Point.init(0, 0, 0);
+    const up = Vector.init(0, 1, 0);
+
+    const t = makeView(from, to, up);
+
+    errdefer print(t);
+    try expect(t.equals(makeTranslation(0, 0, -8)));
+}
+
+test "An arbitrary view transform" {
+    const from = Point.init(1, 3, 2);
+    const to = Point.init(4, -2, 8);
+    const up = Vector.init(1, 1, 0);
+
+    const t = makeView(from, to, up);
+
+    // TODO book tests are imprecise
+    try expect(t.equalsTolerance(Mat4.init(.{
+        -0.50709, 0.50709, 0.67612,  -2.36643,
+        0.76772,  0.60609, 0.12122,  -2.82843,
+        -0.35857, 0.59761, -0.71714, 0.0,
+        0.0,      0.0,     0.0,      1.0,
+    }), 100_000_000_000));
 }

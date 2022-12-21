@@ -11,12 +11,13 @@ const Ray = @import("ray.zig").Ray;
 const Color = @import("color.zig").Color;
 
 const World = @import("world.zig").World;
+const Camera = @import("world.zig").Camera;
 const Sphere = @import("sphere.zig").Sphere;
 const VolPtr = @import("world.zig").VolumePtr;
 
-const Intersections = @import("intersect.zig").Intersections;
-
 const Qanvas = @import("qanvas.zig").Qanvas;
+
+const Intersections = @import("intersect.zig").Intersections;
 
 const Chunk = struct {
     start_x: i64,
@@ -51,7 +52,7 @@ fn getChunks(w: i64, qan: Qanvas, alctr: std.mem.Allocator) []Chunk {
     return chunks.toOwnedSlice() catch unreachable;
 }
 
-pub fn startRenderEngine(world: World, window_center: Tuple, heading: Tuple, qan: *Qanvas, alctr: std.mem.Allocator) void {
+pub fn startRenderEngine(world: World, cam: Camera, qan: *Qanvas, alctr: std.mem.Allocator) void {
     std.debug.print("Starting render.\n", .{});
     var prog_ctx = std.Progress{};
     var prog = prog_ctx.start("Pixels", qan.width * qan.height);
@@ -99,7 +100,7 @@ pub fn startRenderEngine(world: World, window_center: Tuple, heading: Tuple, qan
                 threads_idle[ti] = false;
                 chunk.done = true;
                 var thr = std.Thread.spawn(.{}, render,
-                    .{world, window_center, heading, qan, prog, alctr,
+                    .{world, cam, qan, prog, alctr,
                     chunk.start_x, chunk.end_x, chunk.start_y, chunk.end_y,
                     &threads_idle[ti]}
                 ) catch unreachable;
@@ -140,8 +141,7 @@ pub fn startRenderEngine(world: World, window_center: Tuple, heading: Tuple, qan
 // zig fmt: off
 fn render(
     world: World,
-    window_center: Tuple,
-    heading: Tuple,
+    cam: Camera,
     qan: *Qanvas,
     prog: *std.Progress.Node,
     alctr: std.mem.Allocator,
@@ -151,7 +151,6 @@ fn render(
 ) void {
 // zig fmt: on
     defer done_flag.* = true;
-    const cam = window_center.plus(heading.normalized().scaled(-2));
 
     {
         var pix_y: i64 = start_y;
@@ -163,41 +162,11 @@ fn render(
         }
     }
 
-    var intersections = Intersections.init(alctr, .{});
-    defer intersections.deinit();
-
     var pix_y: i64 = start_y;
     while (pix_y < end_y) : (pix_y += 1) {
         var pix_x: i64 = start_x;
         while (pix_x < end_x) : (pix_x += 1) {
-            const pixels_per_unit = 256;
-            // get point on window
-            const pix_x_w = @intToFloat(f64, pix_x - @divTrunc(@intCast(i64, qan.width), 2)) / pixels_per_unit;
-            const pix_y_w = @intToFloat(f64, pix_y - @divTrunc(@intCast(i64, qan.height), 2)) / pixels_per_unit;
-            // note the -pix_y_w. pixel space y increases downwards
-            // but object space y increases upwards
-            const aim_point = window_center.plus(Vector.init(pix_x_w, -pix_y_w, 0));
-            const aim_ray = Ray.init(cam, aim_point.minus(cam).normalized());
-
-            for (world.spheres_buf.items) |*sphptr, i| {
-                const sph = VolPtr{ .sphere_idx = i };
-                intersections.intersect(sph, sphptr.*, aim_ray);
-            }
-            defer intersections.clear();
-
-            if (intersections.hit()) |x| {
-                const p = aim_ray.position(x.t);
-                const volume = world.get(Sphere, x.vptr);
-                const n = volume.normalAt(p);
-                const e = aim_ray.direction.scaled(-1);
-                const l = world.get(light.PointLight, VolPtr{ .light_idx = 0 });
-
-                const color = light.lighting(volume.material, l.*, p, e, n);
-                qan.write(color, pix_x, pix_y);
-            } else {
-                qan.write(qan.backgroundColor(pix_x, pix_y), pix_x, pix_y);
-            }
-
+            qan.write(world.colorAt(cam.rayForPixel(pix_x, pix_y), alctr), pix_x, pix_y);
             prog.completeOne();
         }
     }
