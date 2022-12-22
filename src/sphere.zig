@@ -13,22 +13,24 @@ pub const Sphere = struct {
     var next_id: u16 = 1;
 
     id: u16,
-    transform: mtx.Matrix(4, 4),
+    transform: trans.Transform,
+
     // TODO make this field more data-oriented
     material: Material,
 
     pub fn init() This {
         const id = This.next_id;
         This.next_id += 1;
+
         return .{
             .id = id,
-            .transform = mtx.Matrix(4, 4).identity(),
+            .transform = trans.Transform{},
             .material = Material.init(),
         };
     }
 
     pub fn normalAt(self: This, point: Tuple) Tuple {
-        const trans_invs = self.transform.inverted() catch unreachable;
+        const trans_invs = self.transform.inverse;
         const obj_space_point = trans_invs.mult(point);
         const obj_space_normal = obj_space_point.minus(Point.init(0, 0, 0));
         var wld_space_normal = trans_invs.transposed().mult(obj_space_normal);
@@ -55,7 +57,7 @@ test "Spheres have unique ids" {
 test "Sphere's have a default transform" {
     const s = Sphere.init();
 
-    try expect(s.transform.equals(mtx.Matrix(4, 4).identity()));
+    try expect(s.transform.t.equals(mtx.Matrix(4, 4).identity()));
 }
 
 test "Changing a sphere's transformation" {
@@ -63,7 +65,8 @@ test "Changing a sphere's transformation" {
     var t = trans.makeTranslation(2, 3, 4);
     s.transform = t;
 
-    try expect(s.transform.equals(t));
+    try expect(s.transform.t.equals(t.t));
+    try expect(s.transform.inverse.equals(t.inverse));
 }
 
 test "The normal on a sphere at a point on the x axis" {
@@ -114,7 +117,11 @@ test "The normal on a translated sphere" {
 
 test "The normal on a transformed sphere" {
     var s = Sphere.init();
-    s.transform = trans.makeScaling(1, 0.5, 1).mult(trans.makeRotationZ(std.math.pi / 5.0));
+
+    const scale = trans.makeScaling(1, 0.5, 1);
+    const rot = trans.makeRotationZ(std.math.pi / 5.0);
+
+    s.transform = s.transform.chain(.{ scale, rot });
 
     const n = s.normalAt(Point.init(0, @sqrt(2.0) / 2.0, -@sqrt(2.0) / 2.0));
 

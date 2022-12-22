@@ -97,10 +97,8 @@ pub fn Matrix(comptime _rows: usize, comptime _cols: usize) type {
                         inline while (r < _rows) : (r += 1) {
                             comptime var c: usize = 0;
                             inline while (c < _cols) : (c += 1) {
-                                // zig fmt: off
-                        @field(inits, std.fmt.comptimePrint("{}", .{r * _cols + c})) =
-                            @reduce(.Add, selfRows[r] * otherRows[c]);
-                        // zig fmt: on
+                                @field(inits, std.fmt.comptimePrint("{}", .{r * _cols + c})) =
+                                    @reduce(.Add, selfRows[r] * otherRows[c]);
                             }
                         }
                     }

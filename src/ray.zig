@@ -25,10 +25,10 @@ pub const Ray = struct {
         return self.origin.plus(self.direction.scaled(t));
     }
 
-    pub fn transformed(self: This, matrix: mtx.Matrix(4, 4)) This {
+    pub fn transformed(self: This, t: mtx.Matrix(4, 4)) This {
         return .{
-            .origin = matrix.mult(self.origin),
-            .direction = matrix.mult(self.direction),
+            .origin = t.mult(self.origin),
+            .direction = t.mult(self.direction),
         };
     }
 
@@ -59,7 +59,7 @@ test "Computing a point from a distance" {
 test "Translating a ray" {
     const ray = Ray.init(Point.init(1, 2, 3), Vector.init(0, 1, 0));
     const m = trans.makeTranslation(3, 4, 5);
-    const ray2 = ray.transformed(m);
+    const ray2 = ray.transformed(m.t);
 
     try expect(ray2.origin.equals(Point.init(4, 6, 8)));
     try expect(ray2.direction.equals(Vector.init(0, 1, 0)));
@@ -68,7 +68,7 @@ test "Translating a ray" {
 test "Scaling a ray" {
     const ray = Ray.init(Point.init(1, 2, 3), Vector.init(0, 1, 0));
     const m = trans.makeScaling(2, 3, 4);
-    const ray2 = ray.transformed(m);
+    const ray2 = ray.transformed(m.t);
 
     try expect(ray2.origin.equals(Point.init(2, 6, 12)));
     try expect(ray2.direction.equals(Vector.init(0, 3, 0)));

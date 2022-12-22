@@ -69,8 +69,13 @@ pub const World = struct {
     pub fn shadeHit(self: This, data: HitData) Color {
         // TODO smart shape lookup
         const s = self.getVolume(Sphere, data.vptr);
-        // TODO multiple lights
-        return light.lighting(s.material, self.lights_buf.items[0], data.point, data.eye_vector, data.normal_vector);
+
+        var color = Color.init(0, 0, 0);
+        for (self.lights_buf.items) |l| {
+            color = color.plus(light.lighting(s.material, l, data.point, data.eye_vector, data.normal_vector));
+        }
+
+        return color;
     }
 
     pub fn colorAt(self: This, ray: Ray, alctr: std.mem.Allocator) Color {
@@ -82,8 +87,7 @@ pub const World = struct {
         if (ixs.hit()) |hit| {
             const s = self.getVolume(Sphere, hit.vptr);
             const data = HitData.init(ray, hit, s);
-            const l = self.getLight(PointLight, LightPtr{ .light_idx = 0 });
-            return light.lighting(s.material, l.*, data.point, data.eye_vector, data.normal_vector);
+            return self.shadeHit(data);
         } else {
             return Color.init(0, 0, 0);
         }
@@ -115,7 +119,7 @@ pub const Camera = struct {
     half_width: f64,
     half_height: f64,
     fov: f64,
-    transform: Matrix(4, 4),
+    transform: trans.Transform,
     pixel_size: f64,
 
     pub fn init(width: i64, height: i64, fov: f64) This {
@@ -144,7 +148,7 @@ pub const Camera = struct {
             .half_width = half_width,
             .half_height = half_height,
             .fov = fov,
-            .transform = Matrix(4, 4).identity(),
+            .transform = trans.Transform{},
             .pixel_size = pixel_size,
         };
     }
@@ -163,7 +167,7 @@ pub const Camera = struct {
         // using the camera transform, transform the canvas point and the origin,
         // and then compute the ray's direction. (remember that the canvas is
         // always at z=-1)
-        const inv = self.transform.inverted() catch unreachable;
+        const inv = self.transform.inverse;
         const pixel = inv.mult(Point.init(world_x, world_y, -1));
         const origin = inv.mult(Point.init(0, 0, 0));
         const direction = pixel.minus(origin).normalized();
@@ -266,7 +270,7 @@ test "The test world" {
     try expect(w.spheres_buf.items[0].material.specular == 0.2);
 
     // sphere 2
-    try expect(w.spheres_buf.items[1].transform.equals(trans.makeScaling(0.5, 0.5, 0.5)));
+    try expect(w.spheres_buf.items[1].transform.t.equals(trans.makeScaling(0.5, 0.5, 0.5).t));
 }
 
 test "Intersect a world with a ray" {
@@ -380,7 +384,7 @@ test "Constructing a camera" {
     try expect(cam.width == 160);
     try expect(cam.height == 120);
     try expect(cam.fov == std.math.pi / 2.0);
-    try expect(cam.transform.equals(Matrix(4, 4).identity()));
+    try expect(cam.transform.t.equals(Matrix(4, 4).identity()));
 }
 
 test "The pixel size for a horizontal canvas" {

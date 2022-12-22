@@ -95,7 +95,7 @@ pub const Intersections = struct {
 
     // TODO make this interface more general
     pub fn intersect(self: *This, vptr: VolPtr, sphere: Sphere, ray: Ray) void {
-        const td_ray = ray.transformed(sphere.transform.inverted() catch unreachable);
+        const td_ray = ray.transformed(sphere.transform.inverse);
         const sphere_to_ray = td_ray.origin.minus(Point.init(0, 0, 0));
 
         const a = td_ray.direction.dot(td_ray.direction);
@@ -106,8 +106,8 @@ pub const Intersections = struct {
 
         if (discriminant < 0) return;
 
-        self.ixs.append(Intersection.init((-b - @sqrt(discriminant)) / (2 * a), vptr)) catch unreachable;
-        self.ixs.append(Intersection.init((-b + @sqrt(discriminant)) / (2 * a), vptr)) catch unreachable;
+        self.ixs.append(Intersection.init((-b - @sqrt(discriminant)) / (2 * a), vptr)) catch @panic("OOM");
+        self.ixs.append(Intersection.init((-b + @sqrt(discriminant)) / (2 * a), vptr)) catch @panic("OOM");
     }
 
     pub fn clear(self: *This) void {

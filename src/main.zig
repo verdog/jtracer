@@ -22,7 +22,7 @@ const gpa = gpa_impl.allocator();
 pub fn main() !void {
     defer if (!gpa_impl.detectLeaks()) std.debug.print("(No leaks)\n", .{});
 
-    var qan = try Qanvas.init(gpa, 1024, 800);
+    var qan = try Qanvas.init(gpa, 1200, 800);
     defer qan.deinit();
 
     try sdl2.init(.{
@@ -63,29 +63,36 @@ pub fn main() !void {
         defer world.deinit();
 
         var lgt = world.addLight(PointLight);
-        lgt.ptr.position = Point.init(-0.5, 2, 1);
-        lgt.ptr.intensity = Color.init(1, 1, 1);
+        lgt.ptr.position = Point.init(-3, 1, 1);
+        lgt.ptr.intensity = Color.init(0.2, 0.2, 0.4);
 
-        var z: f64 = -0.5;
-        while (z < 7.00) : (z += 2.5) {
-            var sph = world.addVolume(Sphere);
-            sph.ptr.material.color = Color.init(1, 0, 0);
-            sph.ptr.transform = sph.ptr.transform.mult(trans.makeTranslation(-2.5, 0, z));
+        lgt = world.addLight(PointLight);
+        lgt.ptr.position = Point.init(3, 1, 3);
+        lgt.ptr.intensity = Color.init(0.2, 0.4, 0.2);
 
-            sph = world.addVolume(Sphere);
-            sph.ptr.material.color = Color.init(0, 1, 0);
-            sph.ptr.transform = sph.ptr.transform.mult(trans.makeTranslation(0, 0, z));
-            sph.ptr.material.specular = 0.1;
+        lgt = world.addLight(PointLight);
+        lgt.ptr.position = Point.init(0, 3, 2);
+        lgt.ptr.intensity = Color.init(0.6, 0.2, 0.2);
 
-            sph = world.addVolume(Sphere);
-            sph.ptr.material.color = Color.init(0, 0, 1);
-            sph.ptr.material.specular = 0;
-            sph.ptr.transform = sph.ptr.transform.mult(trans.makeTranslation(2.5, 0, z));
+        {
+            var x: f64 = -2.5;
+            while (x <= 2.5) : (x += 0.4) {
+                var z: f64 = -0.5;
+                while (z <= 4.5) : (z += 0.4) {
+                    var sph = world.addVolume(Sphere);
+                    sph.ptr.material.color = Color.init(0.75, 0.75, 1);
+                    sph.ptr.transform = sph.ptr.transform.chain(.{
+                        trans.makeTranslation(x, @sin(x + z) / 4 + z / 2, z),
+                        trans.makeRotationX(-std.math.pi / 3.0),
+                        trans.makeScaling(0.1, 0.05, 0.1),
+                    });
+                }
+            }
         }
 
-        var cam = Camera.init(@intCast(i64, qan.width), @intCast(i64, qan.height), std.math.pi / 3.0);
-        const from = Point.init(0, 4, -2);
-        const to = Point.init(0, 0, 1);
+        var cam = Camera.init(@intCast(i64, qan.width), @intCast(i64, qan.height), std.math.pi / 2.0);
+        const from = Point.init(0, 1.5, -1);
+        const to = Point.init(0, 0.5, 1);
         const up = Vector.init(0, 1, 0);
         cam.transform = trans.makeView(from, to, up);
 
@@ -102,6 +109,13 @@ pub fn main() !void {
                     .quit => break :main_loop,
                     .key_up => |key_up| {
                         if (key_up.keycode == .escape) break :main_loop;
+                        if (key_up.keycode == .s) {
+                            std.debug.print("Saving... ", .{});
+                            const buf = try imgio.encodeQanvasAsQoi(qan, gpa);
+                            defer gpa.free(buf);
+                            try imgio.saveBufAsFile(buf, "out.qoi");
+                            std.debug.print(" {s}\n", .{"out.qoi"});
+                        }
                     },
                     else => {
                         // std.debug.print("Unhandled event: {}\n\n", .{ev});
