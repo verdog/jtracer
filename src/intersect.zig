@@ -94,7 +94,7 @@ pub const Intersections = struct {
     }
 
     // TODO make this interface more general
-    pub fn intersect(self: *This, vptr: VolPtr, sphere: Sphere, ray: Ray) void {
+    pub fn intersect(self: *This, vptr: VolPtr, sphere: *Sphere, ray: Ray) void {
         const td_ray = ray.transformed(sphere.transform.inverted() catch unreachable);
         const sphere_to_ray = td_ray.origin.minus(Point.init(0, 0, 0));
 
@@ -127,10 +127,11 @@ pub const Intersections = struct {
             }
         }.lt;
 
+        // TODO verify that insertion sort is faster than std.sort
         std.sort.insertionSort(Intersection, self.ixs.items, {}, lt);
     }
 
-    // TODO should hit() have side effects?
+    // TODO should hit() include order()?
     pub fn hit(self: *This) ?Intersection {
         self.order();
         if (self.ixs.items.len > 0 and self.ixs.items[0].t >= 0) {

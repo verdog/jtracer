@@ -89,7 +89,7 @@ pub fn main() !void {
         const up = Vector.init(0, 1, 0);
         cam.transform = trans.makeView(from, to, up);
 
-        var thr = std.Thread.spawn(.{}, World.render, .{ world, cam, &qan, gpa }) catch unreachable;
+        var thr = std.Thread.spawn(.{}, World.render, .{ world, &cam, &qan, gpa }) catch unreachable;
         thr.detach();
 
         main_loop: while (true) {

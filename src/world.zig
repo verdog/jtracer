@@ -60,7 +60,7 @@ pub const World = struct {
 
         for (self.spheres_buf.items) |*sphptr, i| {
             const sph = VolumePtr{ .sphere_idx = i };
-            ixs.intersect(sph, sphptr.*, ray);
+            ixs.intersect(sph, sphptr, ray);
         }
 
         ixs.order();
@@ -89,7 +89,7 @@ pub const World = struct {
         }
     }
 
-    pub fn render(self: This, cam: Camera, qan: *Qanvas, alctr: std.mem.Allocator) void {
+    pub fn render(self: This, cam: *Camera, qan: *Qanvas, alctr: std.mem.Allocator) void {
         rdr.startRenderEngine(self, cam, qan, alctr);
     }
 
@@ -149,7 +149,7 @@ pub const Camera = struct {
         };
     }
 
-    pub fn rayForPixel(self: This, x: i64, y: i64) Ray {
+    pub fn rayForPixel(self: *This, x: i64, y: i64) Ray {
         // page 104
         // the offset from the edge of the canvas to the pixel's center
         const x_offset = (@intToFloat(f64, x) + 0.5) * self.pixel_size;
