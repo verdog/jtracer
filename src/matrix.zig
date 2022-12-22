@@ -15,9 +15,6 @@ pub fn Matrix(comptime _rows: usize, comptime _cols: usize) type {
 
         /// memory representation of the matrix
         vec: @Vector(compt_rows * compt_columns, f64),
-        /// cached inverted matrix. only valid if has_cached_inverted is true
-        ivec: @Vector(compt_rows * compt_columns, f64) = undefined,
-        has_cached_inverted: bool = false,
 
         pub fn init(inits: std.meta.Tuple(&[_]type{f64} ** (_rows * _cols))) This {
             const zero: f64 = 0;
@@ -171,15 +168,7 @@ pub fn Matrix(comptime _rows: usize, comptime _cols: usize) type {
             return self.determinant() != 0;
         }
 
-        pub fn inverted(self: *This) !This {
-            if (self.has_cached_inverted) {
-                return This{
-                    .vec = self.ivec,
-                    .ivec = self.vec,
-                    .has_cached_inverted = true,
-                };
-            }
-
+        pub fn inverted(self: This) !This {
             if (!self.isInvertible()) {
                 std.debug.print("{}\n", .{self.determinant()});
                 return error.NotInvertible;
@@ -201,11 +190,7 @@ pub fn Matrix(comptime _rows: usize, comptime _cols: usize) type {
             const size = This.compt_rows * This.compt_columns;
             cofacts /= @splat(size, self.determinant());
 
-            const inverse = This.fromVector(cofacts).transposed();
-            self.ivec = inverse.vec;
-            self.has_cached_inverted = true;
-
-            return inverse;
+            return This.fromVector(cofacts).transposed();
         }
 
         pub fn submatrix(self: This, row: usize, column: usize) Matrix(This.compt_rows - 1, This.compt_columns - 1) {

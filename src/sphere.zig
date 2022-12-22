@@ -27,7 +27,7 @@ pub const Sphere = struct {
         };
     }
 
-    pub fn normalAt(self: *This, point: Tuple) Tuple {
+    pub fn normalAt(self: This, point: Tuple) Tuple {
         const trans_invs = self.transform.inverted() catch unreachable;
         const obj_space_point = trans_invs.mult(point);
         const obj_space_normal = obj_space_point.minus(Point.init(0, 0, 0));

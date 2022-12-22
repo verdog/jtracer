@@ -52,7 +52,7 @@ fn getChunks(w: i64, qan: Qanvas, alctr: std.mem.Allocator) []Chunk {
     return chunks.toOwnedSlice() catch unreachable;
 }
 
-pub fn startRenderEngine(world: World, cam: *Camera, qan: *Qanvas, alctr: std.mem.Allocator) void {
+pub fn startRenderEngine(world: World, cam: Camera, qan: *Qanvas, alctr: std.mem.Allocator) void {
     std.debug.print("Starting render.\n", .{});
     var prog_ctx = std.Progress{};
     var prog = prog_ctx.start("Pixels", qan.width * qan.height);
@@ -70,24 +70,7 @@ pub fn startRenderEngine(world: World, cam: *Camera, qan: *Qanvas, alctr: std.me
     std.debug.print("Using {} threads.\n", .{@min(num_threads, 16)});
 
     var threads_idle_buf = [_]bool{true} ** 16;
-    var threads_working_memory_buf = [_][]u8{undefined} ** 16;
-    var threads_alctr_buf = [_]std.heap.FixedBufferAllocator{undefined} ** 16;
-
     var threads_idle = threads_idle_buf[0..num_threads];
-    var threads_working_memory = threads_working_memory_buf[0..num_threads];
-    var threads_alctr = threads_alctr_buf[0..num_threads];
-
-    for (threads_working_memory) |*buf| {
-        buf.* = alctr.alloc(u8, 512) catch unreachable;
-    }
-
-    defer for (threads_working_memory) |buf| {
-        alctr.free(buf);
-    };
-
-    for (threads_alctr) |*talctr, i| {
-        talctr.* = std.heap.FixedBufferAllocator.init(threads_working_memory[i]);
-    }
 
     var timer = std.time.Timer.start() catch unreachable;
 
@@ -116,9 +99,8 @@ pub fn startRenderEngine(world: World, cam: *Camera, qan: *Qanvas, alctr: std.me
                 // zig fmt: off
                 threads_idle[ti] = false;
                 chunk.done = true;
-
                 var thr = std.Thread.spawn(.{}, render,
-                    .{world, cam, qan, prog, threads_alctr[ti].allocator(),
+                    .{world, cam, qan, prog, alctr,
                     chunk.start_x, chunk.end_x, chunk.start_y, chunk.end_y,
                     &threads_idle[ti]}
                 ) catch unreachable;
@@ -159,7 +141,7 @@ pub fn startRenderEngine(world: World, cam: *Camera, qan: *Qanvas, alctr: std.me
 // zig fmt: off
 fn render(
     world: World,
-    cam: *Camera,
+    cam: Camera,
     qan: *Qanvas,
     prog: *std.Progress.Node,
     alctr: std.mem.Allocator,
