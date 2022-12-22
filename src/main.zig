@@ -22,7 +22,7 @@ const gpa = gpa_impl.allocator();
 pub fn main() !void {
     defer if (!gpa_impl.detectLeaks()) std.debug.print("(No leaks)\n", .{});
 
-    var qan = try Qanvas.init(gpa, 1200, 800);
+    var qan = try Qanvas.init(gpa, 800, 800);
     defer qan.deinit();
 
     try sdl2.init(.{
@@ -63,36 +63,32 @@ pub fn main() !void {
         defer world.deinit();
 
         var lgt = world.addLight(PointLight);
-        lgt.ptr.position = Point.init(-3, 1, 1);
-        lgt.ptr.intensity = Color.init(0.2, 0.2, 0.4);
-
-        lgt = world.addLight(PointLight);
-        lgt.ptr.position = Point.init(3, 1, 3);
-        lgt.ptr.intensity = Color.init(0.2, 0.4, 0.2);
-
-        lgt = world.addLight(PointLight);
-        lgt.ptr.position = Point.init(0, 3, 2);
-        lgt.ptr.intensity = Color.init(0.6, 0.2, 0.2);
+        lgt.ptr.position = Point.init(-3, 4, 1);
+        lgt.ptr.intensity = Color.init(1, 1, 1);
 
         {
-            var x: f64 = -2.5;
-            while (x <= 2.5) : (x += 0.4) {
-                var z: f64 = -0.5;
-                while (z <= 4.5) : (z += 0.4) {
+            var z: f64 = -1.5;
+            while (z <= 1.5) : (z += 0.25) {
+                var min_x = -z * z;
+                var max_x = z * z;
+                var x = min_x;
+                while (x <= max_x) : (x += 0.25) {
                     var sph = world.addVolume(Sphere);
-                    sph.ptr.material.color = Color.init(0.75, 0.75, 1);
+
+                    sph.ptr.material.color = Color.init(0.6, 1, 0.6);
+                    sph.ptr.material.shininess = 130;
+
                     sph.ptr.transform = sph.ptr.transform.chain(.{
-                        trans.makeTranslation(x, @sin(x + z) / 4 + z / 2, z),
-                        trans.makeRotationX(-std.math.pi / 3.0),
-                        trans.makeScaling(0.1, 0.05, 0.1),
+                        trans.makeTranslation(x, @sin(z) / 3, z),
+                        trans.makeScaling(0.1, 0.1, 0.1),
                     });
                 }
             }
         }
 
-        var cam = Camera.init(@intCast(i64, qan.width), @intCast(i64, qan.height), std.math.pi / 2.0);
-        const from = Point.init(0, 1.5, -1);
-        const to = Point.init(0, 0.5, 1);
+        var cam = Camera.init(@intCast(i64, qan.width), @intCast(i64, qan.height), std.math.pi / 3.0);
+        const from = Point.init(1, 1, -2);
+        const to = Point.init(0, -1, 0);
         const up = Vector.init(0, 1, 0);
         cam.transform = trans.makeView(from, to, up);
 
