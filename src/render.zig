@@ -72,6 +72,24 @@ pub fn startRenderEngine(world: World, cam: Camera, qan: *Qanvas, alctr: std.mem
     var threads_idle_buf = [_]bool{true} ** 16;
     var threads_idle = threads_idle_buf[0..num_threads];
 
+    var threads_working_mem_buf = [_][]u8{undefined} ** 16;
+    var threads_working_mem = threads_working_mem_buf[0..num_threads];
+
+    for (threads_working_mem) |*slc| {
+        slc.* = alctr.alloc(u8, 512) catch unreachable;
+    }
+
+    defer for (threads_working_mem) |slc| {
+        alctr.free(slc);
+    };
+
+    var threads_alctrs_buf = [_]std.heap.FixedBufferAllocator{undefined} ** 16;
+    var threads_alctrs = threads_alctrs_buf[0..num_threads];
+
+    for (threads_alctrs) |*alc, i| {
+        alc.* = std.heap.FixedBufferAllocator.init(threads_working_mem[i]);
+    }
+
     var timer = std.time.Timer.start() catch unreachable;
 
     while (true) {
@@ -100,7 +118,7 @@ pub fn startRenderEngine(world: World, cam: Camera, qan: *Qanvas, alctr: std.mem
                 threads_idle[ti] = false;
                 chunk.done = true;
                 var thr = std.Thread.spawn(.{}, render,
-                    .{world, cam, qan, prog, alctr,
+                    .{world, cam, qan, prog, threads_alctrs[ti].allocator(),
                     chunk.start_x, chunk.end_x, chunk.start_y, chunk.end_y,
                     &threads_idle[ti]}
                 ) catch unreachable;
