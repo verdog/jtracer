@@ -85,8 +85,6 @@ pub const World = struct {
         // TODO smart shape lookup
         const s = self.getVolume(Sphere, data.vptr);
 
-        // TODO this probably will add the ambient factor multiple times
-        // with multiple lights
         var color = Color.init(0, 0, 0);
 
         for (self.lights_buf.items) |l| {

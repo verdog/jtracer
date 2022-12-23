@@ -63,8 +63,13 @@ pub fn main() !void {
         defer world.deinit();
 
         var lgt = world.addLight(PointLight);
-        lgt.ptr.position = Point.init(-10, 10, -10);
-        lgt.ptr.intensity = Color.init(1, 1, 1);
+        lgt.ptr.position = Point.init(-10, 10, -5);
+        lgt.ptr.intensity = Color.init(0.5, 0.5, 0.5);
+
+        lgt = world.addLight(PointLight);
+        lgt.ptr.position = Point.init(-10, 10, -5);
+        lgt.ptr.position = trans.makeRotationY(-std.math.pi / 2.0).t.mult(lgt.ptr.position);
+        lgt.ptr.intensity = Color.init(0.5, 0.5, 0.5);
 
         var sph = world.addVolume(Sphere);
         sph.ptr.material.color = Color.init(1, 0.9, 0.9);
@@ -106,7 +111,7 @@ pub fn main() !void {
         sph.ptr.material.diffuse = 0.7;
         sph.ptr.material.specular = 0.3;
         sph.ptr.transform = sph.ptr.transform.chain(.{
-            trans.makeTranslation(1.5, 0.5, -0.5),
+            trans.makeTranslation(1.5, 0.5, 1),
             trans.makeScaling(0.5, 0.5, 0.5),
         });
 
