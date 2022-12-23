@@ -1,13 +1,4 @@
-const std = @import("std");
-
-const mtx = @import("matrix.zig");
-const trans = @import("transform.zig");
-
-const Tuple = @import("tuple.zig").Tuple;
-const Point = @import("tuple.zig").Point;
-const Vector = @import("tuple.zig").Vector;
-
-const Material = @import("material.zig").Material;
+//! definitions of volumes that can be placed in a scene
 
 pub const Sphere = struct {
     var next_id: u16 = 1;
@@ -44,10 +35,86 @@ pub const Sphere = struct {
     const This = @This();
 };
 
-const expect = std.testing.expect;
-const print = @import("u.zig").print;
+pub const Plane = struct {
+    transform: trans.Transform,
+    material: Material,
+
+    pub fn init() This {
+        return .{
+            .transform = trans.Transform{},
+            .material = Material.init(),
+        };
+    }
+
+    pub fn normalAt(self: This, point: Tuple) Tuple {
+        _ = point; // the normal vector on a plane is the same everywhere
+        return self.transform.t.mult(Vector.init(0, 1, 0)).normalized();
+    }
+
+    const This = @This();
+};
+
+test "The normal of a plane is constant everywhere" {
+    const p = Plane.init();
+
+    const n1 = p.normalAt(Point.init(0, 0, 0));
+    const n2 = p.normalAt(Point.init(10, 0, -10));
+    const n3 = p.normalAt(Point.init(100000, 0, 3));
+
+    const n = Vector.init(0, 1, 0);
+
+    errdefer print(n);
+    errdefer print(n3);
+    errdefer print(n2);
+    errdefer print(n1);
+
+    try expect(n.equals(n1));
+    try expect(n.equals(n2));
+    try expect(n.equals(n3));
+}
+
+test "The normal of a scaled plane is constant everywhere" {
+    var p = Plane.init();
+    p.transform = p.transform.mult(trans.makeScaling(1, 10, 1));
+
+    const n1 = p.normalAt(Point.init(0, 0, 0));
+    const n2 = p.normalAt(Point.init(10, 0, -10));
+    const n3 = p.normalAt(Point.init(100000, 0, 3));
+
+    const n = Vector.init(0, 1, 0);
+
+    errdefer print(n3);
+    errdefer print(n2);
+    errdefer print(n1);
+    errdefer print(n);
+
+    try expect(n.equals(n1));
+    try expect(n.equals(n2));
+    try expect(n.equals(n3));
+}
+
+test "The normal of a rotated plane is constant everywhere" {
+    var p = Plane.init();
+    p.transform = p.transform.mult(trans.makeRotationX(std.math.pi / 2.0));
+
+    const n1 = p.normalAt(Point.init(0, 0, 0));
+    const n2 = p.normalAt(Point.init(10, 0, -10));
+    const n3 = p.normalAt(Point.init(100000, 0, 3));
+
+    const n = Vector.init(0, 0, 1);
+
+    errdefer print(n3);
+    errdefer print(n2);
+    errdefer print(n1);
+    errdefer print(n);
+
+    try expect(n.equals(n1));
+    try expect(n.equals(n2));
+    try expect(n.equals(n3));
+}
 
 test "Spheres have unique ids" {
+    // TODO this is unused so far
     const s1 = Sphere.init();
     const s2 = Sphere.init();
 
@@ -146,3 +213,17 @@ test "A sphere may be assigned a material" {
 
     try expect(std.meta.eql(s.material, m));
 }
+
+const std = @import("std");
+
+const mtx = @import("matrix.zig");
+const trans = @import("transform.zig");
+
+const Tuple = @import("tuple.zig").Tuple;
+const Point = @import("tuple.zig").Point;
+const Vector = @import("tuple.zig").Vector;
+
+const Material = @import("material.zig").Material;
+
+const expect = std.testing.expect;
+const print = @import("u.zig").print;

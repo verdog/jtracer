@@ -12,7 +12,7 @@ const Color = @import("color.zig").Color;
 
 const World = @import("world.zig").World;
 const Camera = @import("world.zig").Camera;
-const Sphere = @import("sphere.zig").Sphere;
+const Sphere = @import("volume.zig").Sphere;
 const VolPtr = @import("world.zig").VolumePtr;
 
 const Qanvas = @import("qanvas.zig").Qanvas;

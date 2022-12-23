@@ -53,7 +53,9 @@ pub const Tuple = struct {
 
     pub fn normalized(self: This) This {
         std.debug.assert(self.magnitude() != 0);
-        return This{ .vec = self.vec / @splat(4, self.magnitude()) };
+        var r = This{ .vec = self.vec / @splat(4, self.magnitude()) };
+        r.vec[3] = self.vec[3];
+        return r;
     }
 
     pub fn dot(self: This, other: This) f64 {

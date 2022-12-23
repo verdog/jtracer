@@ -6,6 +6,7 @@ const Point = @import("tuple.zig").Point;
 
 const mtx = @import("matrix.zig");
 const trans = @import("transform.zig");
+const mymath = @import("mymath.zig");
 
 pub const Ray = struct {
     origin: Tuple,
@@ -14,6 +15,7 @@ pub const Ray = struct {
     pub fn init(origin: Tuple, direction: Tuple) This {
         std.debug.assert(origin.isPoint());
         std.debug.assert(direction.isVector());
+        std.debug.assert(std.math.approxEqRel(f64, direction.magnitude(), 1.0, mymath.floatTolerance));
 
         return .{
             .origin = origin,
@@ -39,7 +41,7 @@ const expect = std.testing.expect;
 
 test "Creating and querying a ray" {
     const origin = Point.init(1, 2, 3);
-    const direction = Vector.init(4, 5, 6);
+    const direction = Vector.init(4, 5, 6).normalized();
 
     const ray = Ray.init(origin, direction);
 

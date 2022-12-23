@@ -74,8 +74,8 @@ pub const World = struct {
         ixs.clear();
 
         for (self.spheres_buf.items) |*sphptr, i| {
-            const sph = VolumePtr{ .sphere_idx = i };
-            ixs.intersect(sph, sphptr.*, ray);
+            const vptr = VolumePtr{ .sphere_idx = i };
+            ixs.intersect(sphptr.*, vptr, ray);
         }
 
         ixs.order();
@@ -197,6 +197,7 @@ pub const Camera = struct {
 
 pub const VolumePtr = union(enum) {
     sphere_idx: usize,
+    plane_idx: usize,
 };
 
 pub const LightPtr = union(enum) {
@@ -208,7 +209,7 @@ const Point = @import("tuple.zig").Point;
 const Vector = @import("tuple.zig").Vector;
 const Color = @import("color.zig").Color;
 
-const Sphere = @import("sphere.zig").Sphere;
+const Sphere = @import("volume.zig").Sphere;
 const PointLight = @import("light.zig").PointLight;
 
 const Ray = @import("ray.zig").Ray;

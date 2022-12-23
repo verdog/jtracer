@@ -1,19 +1,5 @@
 //! intersection algorithms
 
-const std = @import("std");
-
-const Tuple = @import("tuple.zig").Tuple;
-const Vector = @import("tuple.zig").Vector;
-const Point = @import("tuple.zig").Point;
-const Ray = @import("ray.zig").Ray;
-
-const VolPtr = @import("world.zig").VolumePtr;
-const Sphere = @import("sphere.zig").Sphere;
-
-const trans = @import("transform.zig");
-const mtx = @import("matrix.zig");
-const mymath = @import("mymath.zig");
-
 /// get information that will be needed for shading based on an intersection
 /// and the ray that generated it
 pub const HitData = struct {
@@ -98,8 +84,21 @@ pub const Intersections = struct {
         self.ixs.deinit();
     }
 
-    // TODO make this interface more general
-    pub fn intersect(self: *This, vptr: VolPtr, sphere: Sphere, ray: Ray) void {
+    pub fn intersect(self: *This, volu: anytype, vptr: VolPtr, ray: Ray) void {
+        switch (@TypeOf(volu)) {
+            Sphere => {
+                std.debug.assert(std.meta.activeTag(vptr) == .sphere_idx);
+                self.intersectSphere(vptr, volu, ray);
+            },
+            vol.Plane => {
+                std.debug.assert(std.meta.activeTag(vptr) == .plane_idx);
+                self.intersectPlane(vptr, volu, ray);
+            },
+            else => unreachable,
+        }
+    }
+
+    fn intersectSphere(self: *This, vptr: VolPtr, sphere: Sphere, ray: Ray) void {
         const td_ray = ray.transformed(sphere.transform.inverse);
         const sphere_to_ray = td_ray.origin.minus(Point.init(0, 0, 0));
 
@@ -113,6 +112,17 @@ pub const Intersections = struct {
 
         self.ixs.append(Intersection.init((-b - @sqrt(discriminant)) / (2 * a), vptr)) catch @panic("OOM");
         self.ixs.append(Intersection.init((-b + @sqrt(discriminant)) / (2 * a), vptr)) catch @panic("OOM");
+    }
+
+    fn intersectPlane(self: *This, vptr: VolPtr, plane: vol.Plane, ray: Ray) void {
+        const td_ray = ray.transformed(plane.transform.inverse);
+
+        if (@fabs(td_ray.direction.y()) < mymath.floatTolerance) {
+            // ray is parallel (enough) to plane, no hit
+            return;
+        }
+
+        self.ixs.append(Intersection.init(-td_ray.origin.y() / td_ray.direction.y(), vptr)) catch @panic("OOM");
     }
 
     pub fn clear(self: *This) void {
@@ -148,8 +158,6 @@ pub const Intersections = struct {
     const This = @This();
 };
 
-const expect = std.testing.expect;
-
 test "An intersection encapsulates t and object" {
     const sphereidx = VolPtr{ .sphere_idx = 0 };
     const t: f64 = 3.5;
@@ -182,7 +190,7 @@ test "A ray intersects a sphere at two points" {
 
     var xs = Intersections.init(alctr, .{});
     defer xs.deinit();
-    xs.intersect(vptr, sphere, ray);
+    xs.intersect(sphere, vptr, ray);
 
     try expect(xs.ixs.items.len == 2);
     try expect(xs.ixs.items[0].t == 4.0);
@@ -197,7 +205,7 @@ test "A ray intersects a sphere at a tangent" {
 
     var xs = Intersections.init(alctr, .{});
     defer xs.deinit();
-    xs.intersect(vptr, sphere, ray);
+    xs.intersect(sphere, vptr, ray);
 
     try expect(xs.ixs.items.len == 2);
     try expect(xs.ixs.items[0].t == 5.0);
@@ -212,7 +220,7 @@ test "A ray misses a sphere" {
 
     var xs = Intersections.init(alctr, .{});
     defer xs.deinit();
-    xs.intersect(vptr, sphere, ray);
+    xs.intersect(sphere, vptr, ray);
 
     try expect(xs.ixs.items.len == 0);
 }
@@ -225,7 +233,7 @@ test "A ray originates inside a sphere" {
 
     var xs = Intersections.init(alctr, .{});
     defer xs.deinit();
-    xs.intersect(vptr, sphere, ray);
+    xs.intersect(sphere, vptr, ray);
 
     try expect(xs.ixs.items.len == 2);
     try expect(xs.ixs.items[0].t == -1.0);
@@ -240,7 +248,7 @@ test "A sphere behind a ray" {
 
     var xs = Intersections.init(alctr, .{});
     defer xs.deinit();
-    xs.intersect(vptr, sphere, ray);
+    xs.intersect(sphere, vptr, ray);
 
     try expect(xs.ixs.items.len == 2);
     try expect(xs.ixs.items[0].t == -6.0);
@@ -257,7 +265,7 @@ test "Intersect a scaled sphere with a ray" {
 
     var xs = Intersections.init(alctr, .{});
     defer xs.deinit();
-    xs.intersect(vptr, s, ray);
+    xs.intersect(s, vptr, ray);
 
     try expect(xs.ixs.items.len == 2);
     try expect(xs.ixs.items[0].t == 3.0);
@@ -274,7 +282,7 @@ test "Intersect a translated sphere with a ray" {
 
     var xs = Intersections.init(alctr, .{});
     defer xs.deinit();
-    xs.intersect(vptr, s, ray);
+    xs.intersect(s, vptr, ray);
 
     try expect(xs.ixs.items.len == 0);
 }
@@ -287,7 +295,7 @@ test "Intersect sets the object on the intersection" {
 
     var xs = Intersections.init(alctr, .{});
     defer xs.deinit();
-    xs.intersect(vptr, sph, ray);
+    xs.intersect(sph, vptr, ray);
 
     try expect(xs.ixs.items.len == 2);
     try expect(xs.ixs.items[0].vptr.sphere_idx == 7);
@@ -382,3 +390,95 @@ test "HitData: the hit should offset the point" {
     try expect(data.over_point.z() < -mymath.floatTolerance * 16);
     try expect(data.point.z() > data.over_point.z());
 }
+
+test "Intersect with a ray parallel to the plane should yield nothing" {
+    const p = vol.Plane.init();
+    const pptr = VolPtr{ .plane_idx = 0 };
+    const r = Ray.init(Point.init(0, 1, 0), Vector.init(1, 0, 0));
+
+    var xs = Intersections.init(std.testing.allocator, .{});
+    defer xs.deinit();
+
+    xs.intersect(p, pptr, r);
+
+    try expect(xs.ixs.items.len == 0);
+}
+
+test "Intersect with a coplanar ray should yield nothing" {
+    const p = vol.Plane.init();
+    const pptr = VolPtr{ .plane_idx = 0 };
+    const r = Ray.init(Point.init(0, 0, 0), Vector.init(1, 0, 0));
+
+    var xs = Intersections.init(std.testing.allocator, .{});
+    defer xs.deinit();
+
+    xs.intersect(p, pptr, r);
+
+    try expect(xs.ixs.items.len == 0);
+}
+
+test "A ray intersecting a plane from above" {
+    const p = vol.Plane.init();
+    const pptr = VolPtr{ .plane_idx = 0 };
+    const r = Ray.init(Point.init(0, 10, 0), Vector.init(0, -1, 0));
+
+    var xs = Intersections.init(std.testing.allocator, .{});
+    defer xs.deinit();
+
+    xs.intersect(p, pptr, r);
+
+    try expect(xs.ixs.items.len == 1);
+    try expect(xs.ixs.items[0].t == 10);
+    try expect(std.meta.eql(xs.ixs.items[0].vptr, pptr));
+}
+
+test "A ray intersecting a plane from below" {
+    const p = vol.Plane.init();
+    const pptr = VolPtr{ .plane_idx = 0 };
+    const r = Ray.init(Point.init(0, -3, 0), Vector.init(0, 1, 0));
+
+    var xs = Intersections.init(std.testing.allocator, .{});
+    defer xs.deinit();
+
+    xs.intersect(p, pptr, r);
+
+    try expect(xs.ixs.items.len == 1);
+    try expect(xs.ixs.items[0].t == 3);
+    try expect(std.meta.eql(xs.ixs.items[0].vptr, pptr));
+}
+
+test "A ray intersecting a plane from an angle" {
+    const p = vol.Plane.init();
+    const pptr = VolPtr{ .plane_idx = 0 };
+    const r = Ray.init(Point.init(-3, 4, 0), Vector.init(3, -4, 0).normalized());
+
+    var xs = Intersections.init(std.testing.allocator, .{});
+    defer xs.deinit();
+
+    xs.intersect(p, pptr, r);
+
+    errdefer print(xs.ixs.items);
+
+    try expect(xs.ixs.items.len == 1);
+    try expect(xs.ixs.items[0].t == 5);
+    try expect(std.meta.eql(xs.ixs.items[0].vptr, pptr));
+}
+
+const std = @import("std");
+
+const Tuple = @import("tuple.zig").Tuple;
+const Vector = @import("tuple.zig").Vector;
+const Point = @import("tuple.zig").Point;
+const Ray = @import("ray.zig").Ray;
+
+const VolPtr = @import("world.zig").VolumePtr;
+// TODO remove this, use vol.Sphere
+const Sphere = @import("volume.zig").Sphere;
+
+const trans = @import("transform.zig");
+const mtx = @import("matrix.zig");
+const mymath = @import("mymath.zig");
+const vol = @import("volume.zig");
+
+const expect = std.testing.expect;
+const print = @import("u.zig").print;

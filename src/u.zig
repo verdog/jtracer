@@ -35,7 +35,7 @@ pub fn print(it: anytype) void {
             std.debug.print("{d: <8.5}\n", .{it});
         },
         else => {
-            std.debug.print("{}\n", .{it});
+            std.debug.print("{any}\n", .{it});
         },
     }
 }

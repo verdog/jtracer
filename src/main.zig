@@ -7,7 +7,7 @@ const rndr = @import("render.zig");
 
 const World = @import("world.zig").World;
 const Ray = @import("ray.zig").Ray;
-const Sphere = @import("sphere.zig").Sphere;
+const Sphere = @import("volume.zig").Sphere;
 const PointLight = @import("light.zig").PointLight;
 const Camera = @import("world.zig").Camera;
 
@@ -184,10 +184,9 @@ test {
     _ = @import("matrix.zig");
     _ = @import("transform.zig");
     _ = @import("ray.zig");
-    _ = @import("sphere.zig");
+    _ = @import("volume.zig");
     _ = @import("world.zig");
     _ = @import("intersect.zig");
     _ = @import("light.zig");
     _ = @import("material.zig");
-    _ = @import("end2end.zig");
 }
