@@ -63,12 +63,11 @@ pub fn main() !void {
         defer world.deinit();
 
         var lgt = world.addLight(PointLight);
-        lgt.ptr.position = Point.init(-10, 7, -5);
+        lgt.ptr.position = Point.init(-1, 3, -1);
         lgt.ptr.intensity = Color.init(0.7, 0.5, 0.3);
 
         lgt = world.addLight(PointLight);
-        lgt.ptr.position = Point.init(-10, 2, -5);
-        lgt.ptr.position = trans.makeRotationY(-std.math.pi / 2.0).t.mult(lgt.ptr.position);
+        lgt.ptr.position = Point.init(1, 3, 1);
         lgt.ptr.intensity = Color.init(0.3, 0.5, 0.7);
 
         var sph = world.addVolume(vol.Sphere);
@@ -84,7 +83,7 @@ pub fn main() !void {
         sph.ptr.material.diffuse = 0.7;
         sph.ptr.material.specular = 0.3;
         sph.ptr.transform = sph.ptr.transform.chain(.{
-            trans.makeTranslation(1.8, 0.5, 1),
+            trans.makeTranslation(1.3, 0.5, 0.8),
             trans.makeScaling(0.5, 0.5, 0.5),
         });
 
@@ -102,20 +101,30 @@ pub fn main() !void {
         sph.ptr.material.diffuse = 0.7;
         sph.ptr.material.specular = 1;
         sph.ptr.transform = sph.ptr.transform.chain(.{
-            trans.makeTranslation(0.4, 0.4, -2),
+            trans.makeTranslation(0.4, 0.4, -1),
             trans.makeScaling(0.2, 0.4, 0.2),
         });
 
         var pln = world.addVolume(vol.Plane);
-        pln.ptr.material.color = Color.init(0.9, 1, 0.9);
+        pln.ptr.material.color = Color.init(0.6, 0.8, 0.6);
         pln.ptr.material.specular = 0;
+        pln.ptr.material.diffuse = 1;
         pln.ptr.transform = pln.ptr.transform.chain(.{
             // trans.makeRotationY(-std.math.pi / 2.0),
             // trans.makeRotationZ(std.math.pi / 24.0),
         });
 
-        var cam = Camera.init(@intCast(i64, qan.width), @intCast(i64, qan.height), std.math.pi / 3.0);
-        const from = Point.init(0, 1.5, -5);
+        pln = world.addVolume(vol.Plane);
+        pln.ptr.material.color = Color.init(0.3, 0.3, 0.4);
+        pln.ptr.material.ambient = 1;
+        pln.ptr.material.diffuse = 0;
+        pln.ptr.material.specular = 0;
+        pln.ptr.transform = pln.ptr.transform.chain(.{
+            trans.makeTranslation(0, 20, 0),
+        });
+
+        var cam = Camera.init(@intCast(i64, qan.width), @intCast(i64, qan.height), std.math.pi / 2.0);
+        const from = Point.init(1, 2.1, -2);
         const to = Point.init(0, 1, 0);
         const up = Vector.init(0, 1, 0);
         // const from = Point.init(0, 6, 0);
