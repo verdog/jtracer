@@ -5,21 +5,35 @@ const std = @import("std");
 pub const World = struct {
     pub fn init(alctr: std.mem.Allocator) This {
         return .{
-            .spheres_buf = std.ArrayList(Sphere).init(alctr),
+            .spheres_buf = std.ArrayList(vol.Sphere).init(alctr),
+            .planes_buf = std.ArrayList(vol.Plane).init(alctr),
             .lights_buf = std.ArrayList(PointLight).init(alctr),
         };
     }
 
     pub fn deinit(self: This) void {
         self.spheres_buf.deinit();
+        self.planes_buf.deinit();
         self.lights_buf.deinit();
     }
+
     pub fn addVolume(self: *This, comptime T: type) struct { handle: VolumePtr, ptr: *T } {
         switch (T) {
-            Sphere => {
-                self.spheres_buf.append(Sphere.init()) catch unreachable;
+            vol.Sphere => {
+                self.spheres_buf.append(vol.Sphere.init()) catch unreachable;
                 const last = self.spheres_buf.items.len - 1;
-                return .{ .handle = VolumePtr{ .sphere_idx = last }, .ptr = &self.spheres_buf.items[last] };
+                return .{
+                    .handle = VolumePtr{ .sphere_idx = last },
+                    .ptr = &self.spheres_buf.items[last],
+                };
+            },
+            vol.Plane => {
+                self.planes_buf.append(vol.Plane.init()) catch unreachable;
+                const last = self.planes_buf.items.len - 1;
+                return .{
+                    .handle = VolumePtr{ .plane_idx = last },
+                    .ptr = &self.planes_buf.items[last],
+                };
             },
             else => unreachable,
         }
@@ -41,10 +55,10 @@ pub const World = struct {
         }
     }
 
-    pub fn getVolume(self: This, comptime T: type, vptr: VolumePtr) *T {
-        return switch (T) {
-            Sphere => return &self.spheres_buf.items[vptr.sphere_idx],
-            else => unreachable,
+    pub fn getVolume(self: This, vptr: VolumePtr, comptime T: type) *T {
+        return switch (std.meta.activeTag(vptr)) {
+            .sphere_idx => return &self.spheres_buf.items[vptr.sphere_idx],
+            .plane_idx => return &self.planes_buf.items[vptr.plane_idx],
         };
     }
 
@@ -73,23 +87,30 @@ pub const World = struct {
     pub fn intersect(self: This, ray: Ray, ixs: *Intersections) void {
         ixs.clear();
 
-        for (self.spheres_buf.items) |*sphptr, i| {
+        for (self.spheres_buf.items) |*ptr, i| {
             const vptr = VolumePtr{ .sphere_idx = i };
-            ixs.intersect(sphptr.*, vptr, ray);
+            ixs.intersect(ptr.*, vptr, ray);
+        }
+
+        for (self.planes_buf.items) |*ptr, i| {
+            const vptr = VolumePtr{ .plane_idx = i };
+            ixs.intersect(ptr.*, vptr, ray);
         }
 
         ixs.order();
     }
 
     pub fn shadeHit(self: This, data: HitData, alctr: std.mem.Allocator) Color {
-        // TODO smart shape lookup
-        const s = self.getVolume(Sphere, data.vptr);
+        const mat = switch (std.meta.activeTag(data.vptr)) {
+            .sphere_idx => self.spheres_buf.items[data.vptr.sphere_idx].material,
+            .plane_idx => self.planes_buf.items[data.vptr.plane_idx].material,
+        };
 
         var color = Color.init(0, 0, 0);
 
         for (self.lights_buf.items) |l| {
             const in_shadow = self.isShadowed(data.over_point, l, alctr);
-            color = color.plus(light.lighting(s.material, l, data.point, data.eye_vector, data.normal_vector, in_shadow));
+            color = color.plus(light.lighting(mat, l, data.point, data.eye_vector, data.normal_vector, in_shadow));
         }
 
         return color;
@@ -102,8 +123,10 @@ pub const World = struct {
         self.intersect(ray, &ixs);
 
         if (ixs.hit()) |hit| {
-            const s = self.getVolume(Sphere, hit.vptr);
-            const data = HitData.init(ray, hit, s);
+            const data = switch (std.meta.activeTag(hit.vptr)) {
+                .sphere_idx => HitData.init(ray, hit, vol.Sphere, self.spheres_buf.items[hit.vptr.sphere_idx]),
+                .plane_idx => HitData.init(ray, hit, vol.Plane, self.planes_buf.items[hit.vptr.plane_idx]),
+            };
             return self.shadeHit(data, alctr);
         } else {
             return Color.init(0, 0, 0);
@@ -115,7 +138,7 @@ pub const World = struct {
     }
 
     pub fn numVolumes(self: This) usize {
-        return self.spheres_buf.items.len;
+        return self.spheres_buf.items.len + self.planes_buf.items.len;
     }
 
     pub fn numLights(self: This) usize {
@@ -124,7 +147,8 @@ pub const World = struct {
 
     // TODO change these to a list that won't move data
     // around upon extension (e.g. a chunky linked list)?
-    spheres_buf: std.ArrayList(Sphere),
+    spheres_buf: std.ArrayList(vol.Sphere),
+    planes_buf: std.ArrayList(vol.Plane),
     lights_buf: std.ArrayList(PointLight),
 
     const This = @This();
@@ -204,29 +228,6 @@ pub const LightPtr = union(enum) {
     light_idx: usize,
 };
 
-const Tuple = @import("tuple.zig").Tuple;
-const Point = @import("tuple.zig").Point;
-const Vector = @import("tuple.zig").Vector;
-const Color = @import("color.zig").Color;
-
-const Sphere = @import("volume.zig").Sphere;
-const PointLight = @import("light.zig").PointLight;
-
-const Ray = @import("ray.zig").Ray;
-const isct = @import("intersect.zig");
-const light = @import("light.zig");
-const Intersection = isct.Intersection;
-const Intersections = isct.Intersections;
-const HitData = isct.HitData;
-const Matrix = @import("matrix.zig").Matrix;
-const Qanvas = @import("qanvas.zig").Qanvas;
-
-const trans = @import("transform.zig");
-const rdr = @import("render.zig");
-
-const expect = std.testing.expect;
-const print = @import("u.zig").print;
-
 fn getTestWorld(alctr: std.mem.Allocator) World {
     var w = World.init(alctr);
 
@@ -235,13 +236,13 @@ fn getTestWorld(alctr: std.mem.Allocator) World {
         l.ptr.position = Point.init(-10, 10, -10);
     }
     { // first sphere
-        var s = w.addVolume(Sphere);
+        var s = w.addVolume(vol.Sphere);
         s.ptr.material.color = Color.init(0.8, 1.0, 0.6);
         s.ptr.material.diffuse = 0.7;
         s.ptr.material.specular = 0.2;
     }
     { // second sphere
-        var s = w.addVolume(Sphere);
+        var s = w.addVolume(vol.Sphere);
         s.ptr.transform = trans.makeScaling(0.5, 0.5, 0.5);
     }
 
@@ -263,8 +264,8 @@ test "World: add/get sphere" {
     var world = World.init(alctr);
     defer world.deinit();
 
-    const new = world.addVolume(Sphere);
-    var sphereptr = world.getVolume(Sphere, new.handle);
+    const new = world.addVolume(vol.Sphere);
+    var sphereptr = new.ptr;
 
     try expect(sphereptr.id != 0);
 }
@@ -323,7 +324,7 @@ test "Shading an intersection" {
     const r = Ray.init(Point.init(0, 0, -5), Vector.init(0, 0, 1));
     const s = w.spheres_buf.items[0];
     const x = Intersection.init(4.0, VolumePtr{ .sphere_idx = 0 });
-    const d = HitData.init(r, x, s);
+    const d = HitData.init(r, x, vol.Sphere, s);
 
     const c = w.shadeHit(d, alctr);
 
@@ -344,7 +345,7 @@ test "Shading an intersection from the inside" {
     const r = Ray.init(Point.init(0, 0, 0), Vector.init(0, 0, 1));
     const s = w.spheres_buf.items[1];
     const x = Intersection.init(0.5, VolumePtr{ .sphere_idx = 1 });
-    const d = HitData.init(r, x, s);
+    const d = HitData.init(r, x, vol.Sphere, s);
 
     const c = w.shadeHit(d, alctr);
 
@@ -362,17 +363,17 @@ test "Shading an intersection in shadow" {
         l.ptr.position = Point.init(0, 0, -10);
     }
     { // first sphere
-        _ = w.addVolume(Sphere);
+        _ = w.addVolume(vol.Sphere);
     }
     { // second sphere
-        var s = w.addVolume(Sphere);
+        var s = w.addVolume(vol.Sphere);
         s.ptr.transform = trans.makeTranslation(0, 0, 10);
     }
 
     const r = Ray.init(Point.init(0, 0, 5), Vector.init(0, 0, 1));
     const s = w.spheres_buf.items[1];
     const x = Intersection.init(4, VolumePtr{ .sphere_idx = 1 });
-    const d = HitData.init(r, x, s);
+    const d = HitData.init(r, x, vol.Sphere, s);
 
     const c = w.shadeHit(d, alctr);
 
@@ -534,3 +535,26 @@ test "There is no shadow when an object is behind the point" {
 
     try expect(w.isShadowed(p, w.lights_buf.items[0], alctr) == false);
 }
+
+const Tuple = @import("tuple.zig").Tuple;
+const Point = @import("tuple.zig").Point;
+const Vector = @import("tuple.zig").Vector;
+const Color = @import("color.zig").Color;
+
+const PointLight = @import("light.zig").PointLight;
+
+const Ray = @import("ray.zig").Ray;
+const isct = @import("intersect.zig");
+const light = @import("light.zig");
+const Intersection = isct.Intersection;
+const Intersections = isct.Intersections;
+const HitData = isct.HitData;
+const Matrix = @import("matrix.zig").Matrix;
+const Qanvas = @import("qanvas.zig").Qanvas;
+
+const trans = @import("transform.zig");
+const rdr = @import("render.zig");
+const vol = @import("volume.zig");
+
+const expect = std.testing.expect;
+const print = @import("u.zig").print;

@@ -21,9 +21,9 @@ pub const HitData = struct {
     inside: bool,
 
     // TODO fix this interface to somehow work with only the vptr
-    pub fn init(r: Ray, x: Intersection, shape: anytype) This {
+    pub fn init(r: Ray, x: Intersection, comptime T: type, volu: T) This {
         const point = r.position(x.t);
-        var normal_vector = shape.normalAt(point);
+        var normal_vector = volu.normalAt(point);
         const eye_vector = r.direction.scaled(-1);
         const inside = eye_vector.dot(normal_vector) < 0;
         if (inside) normal_vector = normal_vector.scaled(-1);
@@ -349,7 +349,7 @@ test "HitData" {
     const r = Ray.init(Point.init(0, 0, -5), Vector.init(0, 0, 1));
     const s = Sphere.init();
     const x = Intersection.init(4.0, VolPtr{ .sphere_idx = 0 });
-    const data = HitData.init(r, x, s);
+    const data = HitData.init(r, x, vol.Sphere, s);
 
     try expect(data.t == x.t);
     try expect(std.meta.eql(data.vptr, VolPtr{ .sphere_idx = 0 }));
@@ -362,7 +362,7 @@ test "HitData: eye vector outside of the hit shape" {
     const r = Ray.init(Point.init(0, 0, -5), Vector.init(0, 0, 1));
     const s = Sphere.init();
     const x = Intersection.init(4.0, VolPtr{ .sphere_idx = 0 });
-    const data = HitData.init(r, x, s);
+    const data = HitData.init(r, x, vol.Sphere, s);
 
     try expect(data.inside == false);
 }
@@ -371,7 +371,7 @@ test "HitData: eye vector inside of the hit shape" {
     const r = Ray.init(Point.init(0, 0, 0), Vector.init(0, 0, 1));
     const s = Sphere.init();
     const x = Intersection.init(1.0, VolPtr{ .sphere_idx = 0 });
-    const data = HitData.init(r, x, s);
+    const data = HitData.init(r, x, vol.Sphere, s);
 
     try expect(data.point.equals(Point.init(0, 0, 1)));
     try expect(data.inside == true);
@@ -385,7 +385,7 @@ test "HitData: the hit should offset the point" {
     var s = Sphere.init();
     s.transform = trans.makeTranslation(0, 0, 1);
     const x = Intersection.init(5.0, VolPtr{ .sphere_idx = 0 });
-    const data = HitData.init(r, x, s);
+    const data = HitData.init(r, x, vol.Sphere, s);
 
     try expect(data.over_point.z() < -mymath.floatTolerance * 16);
     try expect(data.point.z() > data.over_point.z());
