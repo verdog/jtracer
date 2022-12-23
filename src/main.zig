@@ -63,33 +63,73 @@ pub fn main() !void {
         defer world.deinit();
 
         var lgt = world.addLight(PointLight);
-        lgt.ptr.position = Point.init(-3, 4, 1);
+        lgt.ptr.position = Point.init(-10, 10, -10);
         lgt.ptr.intensity = Color.init(1, 1, 1);
 
-        {
-            var z: f64 = -1.5;
-            while (z <= 1.5) : (z += 0.25) {
-                var min_x = -z * z;
-                var max_x = z * z;
-                var x = min_x;
-                while (x <= max_x) : (x += 0.25) {
-                    var sph = world.addVolume(Sphere);
+        var sph = world.addVolume(Sphere);
+        sph.ptr.material.color = Color.init(1, 0.9, 0.9);
+        sph.ptr.material.specular = 0;
+        sph.ptr.transform = sph.ptr.transform.chain(.{
+            trans.makeScaling(10, 0.01, 10),
+        });
 
-                    sph.ptr.material.color = Color.init(0.6, 1, 0.6);
-                    sph.ptr.material.shininess = 130;
+        sph = world.addVolume(Sphere);
+        sph.ptr.material.color = Color.init(1, 0.9, 0.9);
+        sph.ptr.material.specular = 0;
+        sph.ptr.transform = sph.ptr.transform.chain(.{
+            trans.makeTranslation(0, 0, 5),
+            trans.makeRotationY(-std.math.pi / 4.0),
+            trans.makeRotationX(std.math.pi / 2.0),
+            trans.makeScaling(10, 0.01, 10),
+        });
 
-                    sph.ptr.transform = sph.ptr.transform.chain(.{
-                        trans.makeTranslation(x, @sin(z) / 3, z),
-                        trans.makeScaling(0.1, 0.1, 0.1),
-                    });
-                }
-            }
-        }
+        sph = world.addVolume(Sphere);
+        sph.ptr.material.color = Color.init(1, 0.9, 0.9);
+        sph.ptr.material.specular = 0;
+        sph.ptr.transform = sph.ptr.transform.chain(.{
+            trans.makeTranslation(0, 0, 5),
+            trans.makeRotationY(std.math.pi / 4.0),
+            trans.makeRotationX(std.math.pi / 2.0),
+            trans.makeScaling(10, 0.01, 10),
+        });
 
-        var cam = Camera.init(@intCast(i64, qan.width), @intCast(i64, qan.height), std.math.pi / 3.0);
-        const from = Point.init(1, 1, -2);
-        const to = Point.init(0, -1, 0);
+        sph = world.addVolume(Sphere);
+        sph.ptr.material.color = Color.init(0.1, 1, 0.5);
+        sph.ptr.material.diffuse = 0.7;
+        sph.ptr.material.specular = 0.3;
+        sph.ptr.transform = sph.ptr.transform.chain(.{
+            trans.makeTranslation(-0.5, 1, 0.5),
+        });
+
+        sph = world.addVolume(Sphere);
+        sph.ptr.material.color = Color.init(0.5, 1, 0.1);
+        sph.ptr.material.diffuse = 0.7;
+        sph.ptr.material.specular = 0.3;
+        sph.ptr.transform = sph.ptr.transform.chain(.{
+            trans.makeTranslation(1.5, 0.5, -0.5),
+            trans.makeScaling(0.5, 0.5, 0.5),
+        });
+
+        sph = world.addVolume(Sphere);
+        sph.ptr.material.color = Color.init(1, 0.8, 0.1);
+        sph.ptr.material.diffuse = 0.7;
+        sph.ptr.material.specular = 0.3;
+        sph.ptr.transform = sph.ptr.transform.chain(.{
+            trans.makeTranslation(-1.5, 0.33, -0.75),
+            trans.makeScaling(0.33, 0.33, 0.33),
+        });
+
+        var cam = Camera.init(@intCast(i64, qan.width), @intCast(i64, qan.height), std.math.pi / 2.0);
+        const from = Point.init(0, 1.5, -5);
+        const to = Point.init(0, 1, 0);
         const up = Vector.init(0, 1, 0);
+        // const from = Point.init(0, 6, 0);
+        // const to = Point.init(0, 1, 0);
+        // const up = Vector.init(0, 0, 1);
+
+        // const from = Point.init(0, 0, 6);
+        // const to = Point.init(0, 0, 0);
+        // const up = Vector.init(0, 1, 0);
         cam.transform = trans.makeView(from, to, up);
 
         var thr = std.Thread.spawn(.{}, World.render, .{ world, cam, &qan, gpa }) catch unreachable;
