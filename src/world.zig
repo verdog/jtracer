@@ -55,6 +55,21 @@ pub const World = struct {
         };
     }
 
+    pub fn isShadowed(self: This, point: Tuple, lht: PointLight, alctr: std.mem.Allocator) bool {
+        const p2l = lht.position.minus(point);
+        const distance = p2l.magnitude();
+
+        var ixs = Intersections.init(alctr, .{});
+        defer ixs.deinit();
+        self.intersect(Ray.init(point, p2l.normalized()), &ixs);
+
+        if (ixs.hit()) |hit| {
+            return hit.t < distance;
+        }
+
+        return false;
+    }
+
     pub fn intersect(self: This, ray: Ray, ixs: *Intersections) void {
         ixs.clear();
 
@@ -66,13 +81,17 @@ pub const World = struct {
         ixs.order();
     }
 
-    pub fn shadeHit(self: This, data: HitData) Color {
+    pub fn shadeHit(self: This, data: HitData, alctr: std.mem.Allocator) Color {
         // TODO smart shape lookup
         const s = self.getVolume(Sphere, data.vptr);
 
+        // TODO this probably will add the ambient factor multiple times
+        // with multiple lights
         var color = Color.init(0, 0, 0);
+
         for (self.lights_buf.items) |l| {
-            color = color.plus(light.lighting(s.material, l, data.point, data.eye_vector, data.normal_vector));
+            const in_shadow = self.isShadowed(data.over_point, l, alctr);
+            color = color.plus(light.lighting(s.material, l, data.point, data.eye_vector, data.normal_vector, in_shadow));
         }
 
         return color;
@@ -87,7 +106,7 @@ pub const World = struct {
         if (ixs.hit()) |hit| {
             const s = self.getVolume(Sphere, hit.vptr);
             const data = HitData.init(ray, hit, s);
-            return self.shadeHit(data);
+            return self.shadeHit(data, alctr);
         } else {
             return Color.init(0, 0, 0);
         }
@@ -186,6 +205,7 @@ pub const LightPtr = union(enum) {
     light_idx: usize,
 };
 
+const Tuple = @import("tuple.zig").Tuple;
 const Point = @import("tuple.zig").Point;
 const Vector = @import("tuple.zig").Vector;
 const Color = @import("color.zig").Color;
@@ -306,7 +326,9 @@ test "Shading an intersection" {
     const x = Intersection.init(4.0, VolumePtr{ .sphere_idx = 0 });
     const d = HitData.init(r, x, s);
 
-    const c = w.shadeHit(d);
+    const c = w.shadeHit(d, alctr);
+
+    defer print(c);
 
     // TODO book tests are imprecise
     try expect(c.equalsTolerance(Color.init(0.38066, 0.47583, 0.2855), 100_000_000_000));
@@ -325,10 +347,38 @@ test "Shading an intersection from the inside" {
     const x = Intersection.init(0.5, VolumePtr{ .sphere_idx = 1 });
     const d = HitData.init(r, x, s);
 
-    const c = w.shadeHit(d);
+    const c = w.shadeHit(d, alctr);
 
     // TODO book tests are imprecise
     try expect(c.equalsTolerance(Color.init(0.90498, 0.90498, 0.90498), 100_000_000_000));
+}
+
+test "Shading an intersection in shadow" {
+    const alctr = std.testing.allocator;
+    var w = World.init(alctr);
+    defer w.deinit();
+
+    { // default light
+        var l = w.addLight(PointLight);
+        l.ptr.position = Point.init(0, 0, -10);
+    }
+    { // first sphere
+        _ = w.addVolume(Sphere);
+    }
+    { // second sphere
+        var s = w.addVolume(Sphere);
+        s.ptr.transform = trans.makeTranslation(0, 0, 10);
+    }
+
+    const r = Ray.init(Point.init(0, 0, 5), Vector.init(0, 0, 1));
+    const s = w.spheres_buf.items[1];
+    const x = Intersection.init(4, VolumePtr{ .sphere_idx = 1 });
+    const d = HitData.init(r, x, s);
+
+    const c = w.shadeHit(d, alctr);
+
+    // TODO book tests are imprecise
+    try expect(c.equals(Color.init(0.1, 0.1, 0.1)));
 }
 
 test "The color when a ray misses" {
@@ -444,4 +494,44 @@ test "Rendering a world with a camera" {
 
     // TODO book tests are imprecise
     try expect(qan.at(5, 5).equalsTolerance(Color.init(0.38066, 0.47583, 0.2855), 100_000_000_000));
+}
+
+test "There is no shadow when nothing is collinear with point and light" {
+    const alctr = std.testing.allocator;
+    const w = getTestWorld(alctr);
+    defer w.deinit();
+
+    const p = Point.init(0, 10, 0);
+
+    try expect(w.isShadowed(p, w.lights_buf.items[0], alctr) == false);
+}
+
+test "The shadow when an object is between the point and the light" {
+    const alctr = std.testing.allocator;
+    const w = getTestWorld(alctr);
+    defer w.deinit();
+
+    const p = Point.init(10, -10, 10);
+
+    try expect(w.isShadowed(p, w.lights_buf.items[0], alctr) == true);
+}
+
+test "There is no shadow when an object is behind the light" {
+    const alctr = std.testing.allocator;
+    const w = getTestWorld(alctr);
+    defer w.deinit();
+
+    const p = Point.init(-20, 20, -20);
+
+    try expect(w.isShadowed(p, w.lights_buf.items[0], alctr) == false);
+}
+
+test "There is no shadow when an object is behind the point" {
+    const alctr = std.testing.allocator;
+    const w = getTestWorld(alctr);
+    defer w.deinit();
+
+    const p = Point.init(-2, 2, -2);
+
+    try expect(w.isShadowed(p, w.lights_buf.items[0], alctr) == false);
 }

@@ -24,7 +24,7 @@ pub const PointLight = struct {
 /// - p : The point on the volume
 /// - e : The eye vector (point -> eye)
 /// - n : The normal vector at p
-pub fn lighting(m: Material, l: PointLight, p: Tuple, e: Tuple, n: Tuple) Color {
+pub fn lighting(m: Material, l: PointLight, p: Tuple, e: Tuple, n: Tuple, in_shadow: bool) Color {
     const effective_color = m.color.multiplied(l.intensity);
 
     var lightv = l.position.minus(p);
@@ -41,7 +41,7 @@ pub fn lighting(m: Material, l: PointLight, p: Tuple, e: Tuple, n: Tuple) Color 
     var specular = Color.init(0, 0, 0);
 
     const ldn = lightv.dot(n);
-    if (ldn < 0) {
+    if (ldn < 0 or in_shadow) {
         // light is behind the surface
         diffuse = diffuse.scaled(0);
         specular = specular.scaled(0);
@@ -82,10 +82,22 @@ test "Lighting with the eye between the light and the surface" {
     const n = Vector.init(0, 0, -1);
     const l = PointLight.init(Point.init(0, 0, -10), Color.init(1, 1, 1));
 
-    try expect(lighting(m, l, p, eye, n).equals(Color.init(1.9, 1.9, 1.9)));
+    try expect(lighting(m, l, p, eye, n, false).equals(Color.init(1.9, 1.9, 1.9)));
 }
 
-test "Lighting with tthe eye between light and surface, eye offset 45d" {
+test "Lighting with the surface in the shadow" {
+    const m = Material.init();
+    const p = Point.init(0, 0, 0);
+
+    const eye = Vector.init(0, 0, -1);
+    const n = Vector.init(0, 0, -1);
+    const l = PointLight.init(Point.init(0, 0, -10), Color.init(1, 1, 1));
+    const in_shadow = true;
+
+    try expect(lighting(m, l, p, eye, n, in_shadow).equals(Color.init(0.1, 0.1, 0.1)));
+}
+
+test "Lighting with the eye between light and surface, eye offset 45d" {
     const m = Material.init();
     const p = Point.init(0, 0, 0);
 
@@ -93,7 +105,7 @@ test "Lighting with tthe eye between light and surface, eye offset 45d" {
     const n = Vector.init(0, 0, -1);
     const l = PointLight.init(Point.init(0, 0, -10), Color.init(1, 1, 1));
 
-    try expect(lighting(m, l, p, eye, n).equals(Color.init(1.0, 1.0, 1.0)));
+    try expect(lighting(m, l, p, eye, n, false).equals(Color.init(1.0, 1.0, 1.0)));
 }
 
 test "Lighting with eye opposite surface, light offset 45d" {
@@ -105,7 +117,7 @@ test "Lighting with eye opposite surface, light offset 45d" {
     const l = PointLight.init(Point.init(0, 10, -10), Color.init(1, 1, 1));
 
     // book examples are much less precise than f64
-    try expect(lighting(m, l, p, eye, n).equalsTolerance(Color.init(0.7364, 0.7364, 0.7364), 100_000_000_000));
+    try expect(lighting(m, l, p, eye, n, false).equalsTolerance(Color.init(0.7364, 0.7364, 0.7364), 100_000_000_000));
 }
 
 test "Lighting with eye in the path of the reflection vector" {
@@ -117,7 +129,7 @@ test "Lighting with eye in the path of the reflection vector" {
     const l = PointLight.init(Point.init(0, 10, -10), Color.init(1, 1, 1));
 
     // book examples are much less precise than f64
-    try expect(lighting(m, l, p, eye, n).equalsTolerance(Color.init(1.6364, 1.6364, 1.6364), 100_000_000_000));
+    try expect(lighting(m, l, p, eye, n, false).equalsTolerance(Color.init(1.6364, 1.6364, 1.6364), 100_000_000_000));
 }
 
 test "Lighting with the light behind the surface" {
@@ -128,5 +140,5 @@ test "Lighting with the light behind the surface" {
     const n = Vector.init(0, 0, -1);
     const l = PointLight.init(Point.init(0, 0, 10), Color.init(1, 1, 1));
 
-    try expect(lighting(m, l, p, eye, n).equals(Color.init(0.1, 0.1, 0.1)));
+    try expect(lighting(m, l, p, eye, n, false).equals(Color.init(0.1, 0.1, 0.1)));
 }

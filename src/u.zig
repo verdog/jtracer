@@ -24,6 +24,13 @@ pub fn print(it: anytype) void {
                 it.vec[12], it.vec[13], it.vec[14], it.vec[15],
             });
         },
+        @import("color.zig").Color => {
+            std.debug.print("({d:.5}, {d:.5}, {d:.5})\n", .{
+                it.vec[0],
+                it.vec[1],
+                it.vec[2],
+            });
+        },
         f64 => {
             std.debug.print("{d: <8.5}\n", .{it});
         },

@@ -12,6 +12,7 @@ const Sphere = @import("sphere.zig").Sphere;
 
 const trans = @import("transform.zig");
 const mtx = @import("matrix.zig");
+const mymath = @import("mymath.zig");
 
 /// get information that will be needed for shading based on an intersection
 /// and the ray that generated it
@@ -22,6 +23,8 @@ pub const HitData = struct {
     vptr: VolPtr,
     /// the point of the hit in world space
     point: Tuple,
+    /// point slightly offset by normal_vector
+    over_point: Tuple,
     /// the eye vector, going from point to the origin point of the
     /// ray that generated the intersection
     eye_vector: Tuple,
@@ -38,11 +41,13 @@ pub const HitData = struct {
         const eye_vector = r.direction.scaled(-1);
         const inside = eye_vector.dot(normal_vector) < 0;
         if (inside) normal_vector = normal_vector.scaled(-1);
+        const over_point = point.plus(normal_vector.scaled(32 * mymath.floatTolerance));
 
         return .{
             .t = x.t,
             .vptr = x.vptr,
             .point = point,
+            .over_point = over_point,
             .eye_vector = eye_vector,
             .normal_vector = normal_vector,
             .inside = inside,
@@ -365,4 +370,15 @@ test "HitData: eye vector inside of the hit shape" {
     try expect(data.eye_vector.equals(Vector.init(0, 0, -1)));
     // normal would have been (0, 0, 1), but it is inverted since inside == true
     try expect(data.normal_vector.equals(Vector.init(0, 0, -1)));
+}
+
+test "HitData: the hit should offset the point" {
+    const r = Ray.init(Point.init(0, 0, -5), Vector.init(0, 0, 1));
+    var s = Sphere.init();
+    s.transform = trans.makeTranslation(0, 0, 1);
+    const x = Intersection.init(5.0, VolPtr{ .sphere_idx = 0 });
+    const data = HitData.init(r, x, s);
+
+    try expect(data.over_point.z() < -mymath.floatTolerance * 16);
+    try expect(data.point.z() > data.over_point.z());
 }

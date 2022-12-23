@@ -119,7 +119,7 @@ pub fn main() !void {
             trans.makeScaling(0.33, 0.33, 0.33),
         });
 
-        var cam = Camera.init(@intCast(i64, qan.width), @intCast(i64, qan.height), std.math.pi / 2.0);
+        var cam = Camera.init(@intCast(i64, qan.width), @intCast(i64, qan.height), std.math.pi / 3.0);
         const from = Point.init(0, 1.5, -5);
         const to = Point.init(0, 1, 0);
         const up = Vector.init(0, 1, 0);
