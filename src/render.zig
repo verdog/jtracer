@@ -58,12 +58,12 @@ pub fn startRenderEngine(world: World, cam: Camera, qan: *Qanvas, alctr: std.mem
     var prog = prog_ctx.start("Pixels", qan.width * qan.height);
 
     // TODO base this size on cache size?
-    var chunks = getChunks(32, qan.*, alctr);
+    var chunks = getChunks(16, qan.*, alctr);
     defer alctr.free(chunks);
 
-    // var prng = std.rand.DefaultPrng.init(0);
-    // var random = prng.random();
-    // random.shuffle(Chunk, chunks);
+    var prng = std.rand.DefaultPrng.init(0);
+    var random = prng.random();
+    random.shuffle(Chunk, chunks);
 
     const cpus = std.Thread.getCpuCount() catch unreachable;
     const num_threads = @divTrunc(cpus * 3, 4) + 1;
@@ -114,16 +114,15 @@ pub fn startRenderEngine(world: World, cam: Camera, qan: *Qanvas, alctr: std.mem
 
             if (mthread_i) |ti| {
                 // start thread
-                // zig fmt: off
                 threads_idle[ti] = false;
                 chunk.done = true;
-                var thr = std.Thread.spawn(.{}, render,
-                    .{world, cam, qan, prog, threads_alctrs[ti].allocator(),
-                    chunk.start_x, chunk.end_x, chunk.start_y, chunk.end_y,
-                    &threads_idle[ti]}
-                ) catch unreachable;
+                var thr = std.Thread.spawn(.{}, render, .{
+                    world,             cam,                            qan,
+                    prog,              threads_alctrs[ti].allocator(), chunk.start_x,
+                    chunk.end_x,       chunk.start_y,                  chunk.end_y,
+                    &threads_idle[ti],
+                }) catch unreachable;
                 thr.detach();
-                // zig fmt: on
             } else {
                 // wait and try again
                 std.time.sleep(1_000);
@@ -156,18 +155,18 @@ pub fn startRenderEngine(world: World, cam: Camera, qan: *Qanvas, alctr: std.mem
     std.debug.print("Done in {d:.3} seconds.\n", .{@intToFloat(f64, timer.read()) / 1_000_000_000});
 }
 
-// zig fmt: off
 fn render(
     world: World,
     cam: Camera,
     qan: *Qanvas,
     prog: *std.Progress.Node,
     alctr: std.mem.Allocator,
-    start_x: i64, end_x: i64,
-    start_y: i64, end_y: i64,
-    done_flag: *bool
+    start_x: i64,
+    end_x: i64,
+    start_y: i64,
+    end_y: i64,
+    done_flag: *bool,
 ) void {
-// zig fmt: on
     defer done_flag.* = true;
 
     {
