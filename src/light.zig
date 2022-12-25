@@ -7,6 +7,7 @@ const Point = @import("tuple.zig").Point;
 const Vector = @import("tuple.zig").Vector;
 const Tuple = @import("tuple.zig").Tuple;
 
+const mat = @import("material.zig");
 const Material = @import("material.zig").Material;
 
 pub const PointLight = struct {
@@ -25,7 +26,7 @@ pub const PointLight = struct {
 /// - e : The eye vector (point -> eye)
 /// - n : The normal vector at p
 pub fn lighting(m: Material, l: PointLight, p: Tuple, e: Tuple, n: Tuple, in_shadow: bool) Color {
-    const effective_color = m.color.multiplied(l.intensity);
+    const effective_color = m.color_map.at(p).multiplied(l.intensity);
 
     var lightv = l.position.minus(p);
     if (lightv.magnitude() == 0) {
@@ -141,4 +142,25 @@ test "Lighting with the light behind the surface" {
     const l = PointLight.init(Point.init(0, 0, 10), Color.init(1, 1, 1));
 
     try expect(lighting(m, l, p, eye, n, false).equals(Color.init(0.1, 0.1, 0.1)));
+}
+
+test "Lighting with a pattern applied" {
+    var m = Material.init();
+    m.color_map = mat.StripedColor.init(Color.init(1, 1, 1), Color.init(0, 0, 0));
+    m.ambient = 1;
+    m.diffuse = 0;
+    m.specular = 0;
+
+    const eye = Vector.init(0, 0, -1);
+    const n = Vector.init(0, 0, -1);
+    const l = PointLight.init(Point.init(0, 0, -10), Color.init(1, 1, 1));
+
+    {
+        const c = lighting(m, l, Point.init(0.9, 0, 0), eye, n, false);
+        try expect(c.equals(Color.init(1, 1, 1)));
+    }
+    {
+        const c = lighting(m, l, Point.init(1.1, 0, 0), eye, n, false);
+        try expect(c.equals(Color.init(0, 0, 0)));
+    }
 }

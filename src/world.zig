@@ -101,7 +101,7 @@ pub const World = struct {
     }
 
     pub fn shadeHit(self: This, data: HitData, alctr: std.mem.Allocator) Color {
-        const mat = switch (std.meta.activeTag(data.vptr)) {
+        const mate = switch (std.meta.activeTag(data.vptr)) {
             .sphere_idx => self.spheres_buf.items[data.vptr.sphere_idx].material,
             .plane_idx => self.planes_buf.items[data.vptr.plane_idx].material,
         };
@@ -110,7 +110,7 @@ pub const World = struct {
 
         for (self.lights_buf.items) |l| {
             const in_shadow = self.isShadowed(data.over_point, l, alctr);
-            color = color.plus(light.lighting(mat, l, data.point, data.eye_vector, data.normal_vector, in_shadow));
+            color = color.plus(light.lighting(mate, l, data.point, data.eye_vector, data.normal_vector, in_shadow));
         }
 
         return color;
@@ -237,7 +237,7 @@ fn getTestWorld(alctr: std.mem.Allocator) World {
     }
     { // first sphere
         var s = w.addVolume(vol.Sphere);
-        s.ptr.material.color = Color.init(0.8, 1.0, 0.6);
+        s.ptr.material.color_map = mat.FlatColor.init(Color.init(0.8, 1.0, 0.6));
         s.ptr.material.diffuse = 0.7;
         s.ptr.material.specular = 0.2;
     }
@@ -285,7 +285,7 @@ test "The test world" {
     try expect(w.numVolumes() == 2);
 
     // sphere 1
-    try expect(w.spheres_buf.items[0].material.color.equals(Color.init(0.8, 1.0, 0.6)));
+    try expect(w.spheres_buf.items[0].material.color_map.atC(0, 0, 0).equals(Color.init(0.8, 1.0, 0.6)));
     try expect(w.spheres_buf.items[0].material.diffuse == 0.7);
     try expect(w.spheres_buf.items[0].material.specular == 0.2);
 
@@ -421,7 +421,7 @@ test "The color with an intersections behind the ray" {
 
     const c = w.colorAt(r, alctr);
 
-    try expect(c.equals(w.spheres_buf.items[1].material.color));
+    try expect(c.equals(w.spheres_buf.items[1].material.color_map.atC(0, 0, 0)));
 }
 
 test "Constructing a camera" {
@@ -555,6 +555,7 @@ const Qanvas = @import("qanvas.zig").Qanvas;
 const trans = @import("transform.zig");
 const rdr = @import("render.zig");
 const vol = @import("volume.zig");
+const mat = @import("material.zig");
 
 const expect = std.testing.expect;
 const print = @import("u.zig").print;

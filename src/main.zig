@@ -5,6 +5,7 @@ const imgio = @import("imgio.zig");
 const trans = @import("transform.zig");
 const rndr = @import("render.zig");
 const vol = @import("volume.zig");
+const mat = @import("material.zig");
 
 const World = @import("world.zig").World;
 const Ray = @import("ray.zig").Ray;
@@ -71,7 +72,7 @@ pub fn main() !void {
         lgt.ptr.intensity = Color.init(0.3, 0.5, 0.7);
 
         var sph = world.addVolume(vol.Sphere);
-        sph.ptr.material.color = Color.init(0.1, 1, 0.5);
+        sph.ptr.material.color_map = mat.FlatColor.init(Color.init(0.1, 1, 0.5));
         sph.ptr.material.diffuse = 0.7;
         sph.ptr.material.specular = 0.3;
         sph.ptr.transform = sph.ptr.transform.chain(.{
@@ -79,7 +80,7 @@ pub fn main() !void {
         });
 
         sph = world.addVolume(vol.Sphere);
-        sph.ptr.material.color = Color.init(0.5, 1, 0.1);
+        sph.ptr.material.color_map = mat.FlatColor.init(Color.init(0.5, 1, 0.1));
         sph.ptr.material.diffuse = 0.7;
         sph.ptr.material.specular = 0.3;
         sph.ptr.transform = sph.ptr.transform.chain(.{
@@ -88,7 +89,7 @@ pub fn main() !void {
         });
 
         sph = world.addVolume(vol.Sphere);
-        sph.ptr.material.color = Color.init(1, 0.8, 0.1);
+        sph.ptr.material.color_map = mat.FlatColor.init(Color.init(1, 0.8, 0.1));
         sph.ptr.material.diffuse = 0.7;
         sph.ptr.material.specular = 0.3;
         sph.ptr.transform = sph.ptr.transform.chain(.{
@@ -97,7 +98,7 @@ pub fn main() !void {
         });
 
         sph = world.addVolume(vol.Sphere);
-        sph.ptr.material.color = Color.init(0.4, 0.3, 0.8);
+        sph.ptr.material.color_map = mat.FlatColor.init(Color.init(0.4, 0.3, 0.8));
         sph.ptr.material.diffuse = 0.7;
         sph.ptr.material.specular = 1;
         sph.ptr.transform = sph.ptr.transform.chain(.{
@@ -106,7 +107,7 @@ pub fn main() !void {
         });
 
         var pln = world.addVolume(vol.Plane);
-        pln.ptr.material.color = Color.init(0.6, 0.8, 0.6);
+        pln.ptr.material.color_map = mat.StripedColor.init(Color.init(0.6, 0.8, 0.6), Color.init(0.3, 0.4, 0.3));
         pln.ptr.material.specular = 0;
         pln.ptr.material.diffuse = 1;
         pln.ptr.transform = pln.ptr.transform.chain(.{
@@ -115,7 +116,7 @@ pub fn main() !void {
         });
 
         pln = world.addVolume(vol.Plane);
-        pln.ptr.material.color = Color.init(0.3, 0.3, 0.4);
+        pln.ptr.material.color_map = mat.FlatColor.init(Color.init(0.3, 0.3, 0.4));
         pln.ptr.material.ambient = 1;
         pln.ptr.material.diffuse = 0;
         pln.ptr.material.specular = 0;
