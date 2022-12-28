@@ -23,7 +23,7 @@ const gpa = gpa_impl.allocator();
 pub fn main() !void {
     defer if (!gpa_impl.detectLeaks()) std.debug.print("(No leaks)\n", .{});
 
-    var qan = try Qanvas.init(gpa, 800, 800);
+    var qan = try Qanvas.init(gpa, 1200, 800);
     defer qan.deinit();
 
     try sdl2.init(.{
@@ -64,70 +64,80 @@ pub fn main() !void {
         defer world.deinit();
 
         var lgt = world.addLight(PointLight);
-        lgt.ptr.position = Point.init(-1, 3, -1);
-        lgt.ptr.intensity = Color.init(0.7, 0.5, 0.3);
+        lgt.ptr.position = Point.init(-10, 10, -10);
+        lgt.ptr.intensity = Color.init(1, 1, 1);
 
-        lgt = world.addLight(PointLight);
-        lgt.ptr.position = Point.init(1, 3, 1);
-        lgt.ptr.intensity = Color.init(0.3, 0.5, 0.7);
+        {
+            // striped sphere
+            var sph = world.addVolume(vol.Sphere);
+            sph.ptr.material.color_map = mat.StripeColor.initSingle(Color.init(0.1, 1, 0.5));
+            sph.ptr.material.diffuse = 0.7;
+            sph.ptr.material.specular = 0.3;
+            sph.ptr.material.transform = sph.ptr.material.transform.chain(.{
+                trans.makeScaling(0.25, 0.25, 0.25),
+                trans.makeRotationZ(-std.math.pi / 4.0),
+                trans.makeTranslation(0, 0, 0),
+            });
+            sph.ptr.transform = sph.ptr.transform.chain(.{
+                trans.makeTranslation(-2.5, 1, 0),
+                trans.makeRotationY(std.math.pi / 4.0),
+            });
+        }
+        {
+            // gradient sphere
+            var sph = world.addVolume(vol.Sphere);
+            sph.ptr.material.color_map = mat.GradientColor.init(
+                Color.init(0.8, 0.2, 0.2),
+                Color.init(0.2, 0.2, 0.8),
+            );
+            sph.ptr.material.diffuse = 0.7;
+            sph.ptr.material.specular = 0.3;
+            sph.ptr.material.transform = sph.ptr.material.transform.chain(.{
+                trans.makeTranslation(1, 0, 0),
+                trans.makeScaling(2, 2, 2),
+            });
+            sph.ptr.transform = sph.ptr.transform.chain(.{
+                trans.makeTranslation(0, 1, -0.5),
+            });
+        }
+        {
+            // ring sphere
+            var sph = world.addVolume(vol.Sphere);
+            sph.ptr.material.color_map = mat.RingColor.init(
+                Color.init(0.7, 0.6, 0.1),
+                Color.init(0.1, 0.4, 0.6),
+            );
+            sph.ptr.material.diffuse = 0.7;
+            sph.ptr.material.specular = 0.3;
+            sph.ptr.material.transform = sph.ptr.material.transform.chain(.{
+                trans.makeTranslation(-0.5, 0, 0),
+                trans.makeScaling(0.20, 0.20, 0.20),
+            });
+            sph.ptr.transform = sph.ptr.transform.chain(.{
+                trans.makeTranslation(2.5, 1, 0),
+            });
+        }
+        {
+            // checkered floor
+            var pln = world.addVolume(vol.Plane);
+            pln.ptr.material.color_map = mat.ThreeDCheckedColor.initSingle(Color.init(0.5, 0.5, 0.5));
+            pln.ptr.material.specular = 0;
+            pln.ptr.material.diffuse = 1;
+            pln.ptr.transform = pln.ptr.transform.chain(.{
+                trans.makeTranslation(0, 0, 0),
+            });
+        }
 
-        var sph = world.addVolume(vol.Sphere);
-        sph.ptr.material.color_map = mat.FlatColor.init(Color.init(0.1, 1, 0.5));
-        sph.ptr.material.diffuse = 0.7;
-        sph.ptr.material.specular = 0.3;
-        sph.ptr.transform = sph.ptr.transform.chain(.{
-            trans.makeTranslation(-0.5, 1, 0.5),
-        });
+        var cam = Camera.init(
+            @intCast(i64, qan.width),
+            @intCast(i64, qan.height),
+            std.math.pi / 2.5,
+        );
 
-        sph = world.addVolume(vol.Sphere);
-        sph.ptr.material.color_map = mat.FlatColor.init(Color.init(0.5, 1, 0.1));
-        sph.ptr.material.diffuse = 0.7;
-        sph.ptr.material.specular = 0.3;
-        sph.ptr.transform = sph.ptr.transform.chain(.{
-            trans.makeTranslation(1.3, 0.5, 0.8),
-            trans.makeScaling(0.5, 0.5, 0.5),
-        });
-
-        sph = world.addVolume(vol.Sphere);
-        sph.ptr.material.color_map = mat.FlatColor.init(Color.init(1, 0.8, 0.1));
-        sph.ptr.material.diffuse = 0.7;
-        sph.ptr.material.specular = 0.3;
-        sph.ptr.transform = sph.ptr.transform.chain(.{
-            trans.makeTranslation(-1.5, 0.33, -0.75),
-            trans.makeScaling(0.33, 0.33, 0.33),
-        });
-
-        sph = world.addVolume(vol.Sphere);
-        sph.ptr.material.color_map = mat.FlatColor.init(Color.init(0.4, 0.3, 0.8));
-        sph.ptr.material.diffuse = 0.7;
-        sph.ptr.material.specular = 1;
-        sph.ptr.transform = sph.ptr.transform.chain(.{
-            trans.makeTranslation(0.4, 0.4, -1),
-            trans.makeScaling(0.2, 0.4, 0.2),
-        });
-
-        var pln = world.addVolume(vol.Plane);
-        pln.ptr.material.color_map = mat.StripedColor.init(Color.init(0.6, 0.8, 0.6), Color.init(0.3, 0.4, 0.3));
-        pln.ptr.material.specular = 0;
-        pln.ptr.material.diffuse = 1;
-        pln.ptr.transform = pln.ptr.transform.chain(.{
-            // trans.makeRotationY(-std.math.pi / 2.0),
-            // trans.makeRotationZ(std.math.pi / 24.0),
-        });
-
-        pln = world.addVolume(vol.Plane);
-        pln.ptr.material.color_map = mat.FlatColor.init(Color.init(0.3, 0.3, 0.4));
-        pln.ptr.material.ambient = 1;
-        pln.ptr.material.diffuse = 0;
-        pln.ptr.material.specular = 0;
-        pln.ptr.transform = pln.ptr.transform.chain(.{
-            trans.makeTranslation(0, 20, 0),
-        });
-
-        var cam = Camera.init(@intCast(i64, qan.width), @intCast(i64, qan.height), std.math.pi / 2.0);
-        const from = Point.init(1, 2.1, -2);
+        const from = Point.init(0, 2.2, -5);
         const to = Point.init(0, 1, 0);
         const up = Vector.init(0, 1, 0);
+
         // const from = Point.init(0, 6, 0);
         // const to = Point.init(0, 1, 0);
         // const up = Vector.init(0, 0, 1);

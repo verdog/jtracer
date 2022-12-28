@@ -101,7 +101,11 @@ pub const World = struct {
     }
 
     pub fn shadeHit(self: This, data: HitData, alctr: std.mem.Allocator) Color {
-        const mate = switch (std.meta.activeTag(data.vptr)) {
+        const tfm = switch (data.vptr) {
+            .sphere_idx => |idx| self.spheres_buf.items[idx].transform,
+            .plane_idx => |idx| self.planes_buf.items[idx].transform,
+        };
+        const mate = switch (data.vptr) {
             .sphere_idx => self.spheres_buf.items[data.vptr.sphere_idx].material,
             .plane_idx => self.planes_buf.items[data.vptr.plane_idx].material,
         };
@@ -110,7 +114,7 @@ pub const World = struct {
 
         for (self.lights_buf.items) |l| {
             const in_shadow = self.isShadowed(data.over_point, l, alctr);
-            color = color.plus(light.lighting(mate, l, data.point, data.eye_vector, data.normal_vector, in_shadow));
+            color = color.plus(light.lighting(mate, tfm, l, data.point, data.eye_vector, data.normal_vector, in_shadow));
         }
 
         return color;
