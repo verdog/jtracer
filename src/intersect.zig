@@ -17,10 +17,13 @@ pub const HitData = struct {
     /// the normal vector, going from the point outwards from the surface
     /// that was hit
     normal_vector: Tuple,
+    /// the incoming ray bouncing off of over_point, reflected across normal_vector
+    reflect_vector: Tuple,
     /// true if the normal vector points towards the inside of the shape
     inside: bool,
 
     // TODO fix this interface to somehow work with only the vptr
+    // TODO pass the normal vector as parameter instead of passing the volume
     pub fn init(r: Ray, x: Intersection, comptime T: type, volu: T) This {
         const point = r.position(x.t);
         var normal_vector = volu.normalAt(point);
@@ -28,6 +31,7 @@ pub const HitData = struct {
         const inside = eye_vector.dot(normal_vector) < 0;
         if (inside) normal_vector = normal_vector.scaled(-1);
         const over_point = point.plus(normal_vector.scaled(32 * mymath.floatTolerance));
+        const reflect_vector = r.direction.reflected(normal_vector);
 
         return .{
             .t = x.t,
@@ -36,6 +40,7 @@ pub const HitData = struct {
             .over_point = over_point,
             .eye_vector = eye_vector,
             .normal_vector = normal_vector,
+            .reflect_vector = reflect_vector,
             .inside = inside,
         };
     }
@@ -86,7 +91,7 @@ pub const Intersections = struct {
 
     pub fn intersect(self: *This, volu: anytype, vptr: VolPtr, ray: Ray) void {
         switch (@TypeOf(volu)) {
-            Sphere => {
+            vol.Sphere => {
                 std.debug.assert(std.meta.activeTag(vptr) == .sphere_idx);
                 self.intersectSphere(vptr, volu, ray);
             },
@@ -98,7 +103,7 @@ pub const Intersections = struct {
         }
     }
 
-    fn intersectSphere(self: *This, vptr: VolPtr, sphere: Sphere, ray: Ray) void {
+    fn intersectSphere(self: *This, vptr: VolPtr, sphere: vol.Sphere, ray: Ray) void {
         const td_ray = ray.transformed(sphere.transform.inverse);
         const sphere_to_ray = td_ray.origin.minus(Point.init(0, 0, 0));
 
@@ -185,7 +190,7 @@ test "Aggregating intersections" {
 test "A ray intersects a sphere at two points" {
     const alctr = std.testing.allocator;
     const ray = Ray.init(Point.init(0, 0, -5), Vector.init(0, 0, 1));
-    const sphere = Sphere.init();
+    const sphere = vol.Sphere.init();
     const vptr = VolPtr{ .sphere_idx = 0 };
 
     var xs = Intersections.init(alctr, .{});
@@ -200,7 +205,7 @@ test "A ray intersects a sphere at two points" {
 test "A ray intersects a sphere at a tangent" {
     const alctr = std.testing.allocator;
     const ray = Ray.init(Point.init(0, 1, -5), Vector.init(0, 0, 1));
-    const sphere = Sphere.init();
+    const sphere = vol.Sphere.init();
     const vptr = VolPtr{ .sphere_idx = 0 };
 
     var xs = Intersections.init(alctr, .{});
@@ -215,7 +220,7 @@ test "A ray intersects a sphere at a tangent" {
 test "A ray misses a sphere" {
     const alctr = std.testing.allocator;
     const ray = Ray.init(Point.init(0, 2, -5), Vector.init(0, 0, 1));
-    const sphere = Sphere.init();
+    const sphere = vol.Sphere.init();
     const vptr = VolPtr{ .sphere_idx = 0 };
 
     var xs = Intersections.init(alctr, .{});
@@ -228,7 +233,7 @@ test "A ray misses a sphere" {
 test "A ray originates inside a sphere" {
     const alctr = std.testing.allocator;
     const ray = Ray.init(Point.init(0, 0, 0), Vector.init(0, 0, 1));
-    const sphere = Sphere.init();
+    const sphere = vol.Sphere.init();
     const vptr = VolPtr{ .sphere_idx = 0 };
 
     var xs = Intersections.init(alctr, .{});
@@ -243,7 +248,7 @@ test "A ray originates inside a sphere" {
 test "A sphere behind a ray" {
     const alctr = std.testing.allocator;
     const ray = Ray.init(Point.init(0, 0, 5), Vector.init(0, 0, 1));
-    const sphere = Sphere.init();
+    const sphere = vol.Sphere.init();
     const vptr = VolPtr{ .sphere_idx = 0 };
 
     var xs = Intersections.init(alctr, .{});
@@ -258,7 +263,7 @@ test "A sphere behind a ray" {
 test "Intersect a scaled sphere with a ray" {
     const alctr = std.testing.allocator;
     const ray = Ray.init(Point.init(0, 0, -5), Vector.init(0, 0, 1));
-    var s = Sphere.init();
+    var s = vol.Sphere.init();
     const vptr = VolPtr{ .sphere_idx = 7 };
 
     s.transform = trans.makeScaling(2, 2, 2);
@@ -275,7 +280,7 @@ test "Intersect a scaled sphere with a ray" {
 test "Intersect a translated sphere with a ray" {
     const alctr = std.testing.allocator;
     const ray = Ray.init(Point.init(0, 0, -5), Vector.init(0, 0, 1));
-    var s = Sphere.init();
+    var s = vol.Sphere.init();
     const vptr = VolPtr{ .sphere_idx = 7 };
 
     s.transform = trans.makeTranslation(5, 0, 0);
@@ -290,7 +295,7 @@ test "Intersect a translated sphere with a ray" {
 test "Intersect sets the object on the intersection" {
     const alctr = std.testing.allocator;
     const ray = Ray.init(Point.init(0, 0, -5), Vector.init(0, 0, 1));
-    const sph = Sphere.init();
+    const sph = vol.Sphere.init();
     const vptr = VolPtr{ .sphere_idx = 7 };
 
     var xs = Intersections.init(alctr, .{});
@@ -347,7 +352,7 @@ test "The hit is always the lowest nonnegative intersection" {
 
 test "HitData" {
     const r = Ray.init(Point.init(0, 0, -5), Vector.init(0, 0, 1));
-    const s = Sphere.init();
+    const s = vol.Sphere.init();
     const x = Intersection.init(4.0, VolPtr{ .sphere_idx = 0 });
     const data = HitData.init(r, x, vol.Sphere, s);
 
@@ -360,7 +365,7 @@ test "HitData" {
 
 test "HitData: eye vector outside of the hit shape" {
     const r = Ray.init(Point.init(0, 0, -5), Vector.init(0, 0, 1));
-    const s = Sphere.init();
+    const s = vol.Sphere.init();
     const x = Intersection.init(4.0, VolPtr{ .sphere_idx = 0 });
     const data = HitData.init(r, x, vol.Sphere, s);
 
@@ -369,7 +374,7 @@ test "HitData: eye vector outside of the hit shape" {
 
 test "HitData: eye vector inside of the hit shape" {
     const r = Ray.init(Point.init(0, 0, 0), Vector.init(0, 0, 1));
-    const s = Sphere.init();
+    const s = vol.Sphere.init();
     const x = Intersection.init(1.0, VolPtr{ .sphere_idx = 0 });
     const data = HitData.init(r, x, vol.Sphere, s);
 
@@ -382,7 +387,7 @@ test "HitData: eye vector inside of the hit shape" {
 
 test "HitData: the hit should offset the point" {
     const r = Ray.init(Point.init(0, 0, -5), Vector.init(0, 0, 1));
-    var s = Sphere.init();
+    var s = vol.Sphere.init();
     s.transform = trans.makeTranslation(0, 0, 1);
     const x = Intersection.init(5.0, VolPtr{ .sphere_idx = 0 });
     const data = HitData.init(r, x, vol.Sphere, s);
@@ -464,6 +469,16 @@ test "A ray intersecting a plane from an angle" {
     try expect(std.meta.eql(xs.ixs.items[0].vptr, pptr));
 }
 
+test "Precomputing the reflection vector" {
+    const pl = vol.Plane.init();
+    const r = Ray.init(Point.init(0, 1, -1), Vector.init(0, -@sqrt(2.0) / 2.0, @sqrt(2.0) / 2.0));
+    const i = Intersection.init(@sqrt(2.0), VolPtr{ .plane_idx = 0 });
+
+    const data = HitData.init(r, i, vol.Plane, pl);
+
+    try expect(data.reflect_vector.equals(Vector.init(0, @sqrt(2.0) / 2.0, @sqrt(2.0) / 2.0)));
+}
+
 const std = @import("std");
 
 const Tuple = @import("tuple.zig").Tuple;
@@ -472,8 +487,6 @@ const Point = @import("tuple.zig").Point;
 const Ray = @import("ray.zig").Ray;
 
 const VolPtr = @import("world.zig").VolumePtr;
-// TODO remove this, use vol.Sphere
-const Sphere = @import("volume.zig").Sphere;
 
 const trans = @import("transform.zig");
 const mtx = @import("matrix.zig");

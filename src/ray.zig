@@ -23,6 +23,13 @@ pub const Ray = struct {
         };
     }
 
+    pub fn initC(ox: f64, oy: f64, oz: f64, dx: f64, dy: f64, dz: f64) This {
+        return This.init(
+            Point.init(ox, oy, oz),
+            Vector.init(dx, dy, dz),
+        );
+    }
+
     pub fn position(self: This, t: f64) Tuple {
         return self.origin.plus(self.direction.scaled(t));
     }
@@ -44,6 +51,16 @@ test "Creating and querying a ray" {
     const direction = Vector.init(4, 5, 6).normalized();
 
     const ray = Ray.init(origin, direction);
+
+    try expect(ray.origin.equals(origin));
+    try expect(ray.direction.equals(direction));
+}
+
+test "Creating and querying a ray with initC" {
+    const origin = Point.init(1, 2, 3);
+    const direction = Vector.init(0, 1, 0);
+
+    const ray = Ray.initC(1, 2, 3, 0, 1, 0);
 
     try expect(ray.origin.equals(origin));
     try expect(ray.direction.equals(direction));

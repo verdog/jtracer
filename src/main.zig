@@ -118,11 +118,28 @@ pub fn main() !void {
             });
         }
         {
+            // mirror sphere
+            var sph = world.addVolume(vol.Sphere);
+            sph.ptr.material.color_map = mat.FlatColor.init(
+                Color.init(0.05, 0.05, 0.05),
+            );
+            sph.ptr.material.reflective = 1;
+            sph.ptr.transform = sph.ptr.transform.chain(.{
+                trans.makeTranslation(1, 2.4, 5),
+                trans.makeScaling(2.4, 2.4, 2.4),
+            });
+        }
+        {
             // checkered floor
             var pln = world.addVolume(vol.Plane);
-            pln.ptr.material.color_map = mat.ThreeDCheckedColor.initSingle(Color.init(0.5, 0.5, 0.5));
-            pln.ptr.material.specular = 0;
+            pln.ptr.material.color_map = mat.ThreeDCheckedColor.initSingle(Color.init(
+                0.5,
+                0.5,
+                0.5,
+            ));
+            pln.ptr.material.specular = 0.1;
             pln.ptr.material.diffuse = 1;
+            pln.ptr.material.reflective = 0.2;
             pln.ptr.transform = pln.ptr.transform.chain(.{
                 trans.makeTranslation(0, 0, 0),
             });
@@ -134,8 +151,8 @@ pub fn main() !void {
             std.math.pi / 2.5,
         );
 
-        const from = Point.init(0, 2.2, -5);
-        const to = Point.init(0, 1, 0);
+        const from = Point.init(0, 3.3, -6);
+        const to = Point.init(0, 2, 0);
         const up = Vector.init(0, 1, 0);
 
         // const from = Point.init(0, 6, 0);

@@ -100,7 +100,7 @@ pub const World = struct {
         ixs.order();
     }
 
-    pub fn shadeHit(self: This, data: HitData, alctr: std.mem.Allocator) Color {
+    pub fn shadeHit(self: This, data: HitData, alctr: std.mem.Allocator, reflections_remaining: usize) Color {
         const tfm = switch (data.vptr) {
             .sphere_idx => |idx| self.spheres_buf.items[idx].transform,
             .plane_idx => |idx| self.planes_buf.items[idx].transform,
@@ -112,15 +112,39 @@ pub const World = struct {
 
         var color = Color.init(0, 0, 0);
 
+        // surface color
         for (self.lights_buf.items) |l| {
             const in_shadow = self.isShadowed(data.over_point, l, alctr);
             color = color.plus(light.lighting(mate, tfm, l, data.point, data.eye_vector, data.normal_vector, in_shadow));
         }
 
-        return color;
+        // reflected color
+        var rcolor = self.reflectedColor(data, alctr, reflections_remaining);
+
+        return color.plus(rcolor);
     }
 
-    pub fn colorAt(self: This, ray: Ray, alctr: std.mem.Allocator) Color {
+    pub fn reflectedColor(self: This, data: HitData, alctr: std.mem.Allocator, reflections_remaining: usize) Color {
+        if (reflections_remaining == 0) {
+            return Color.init(0, 0, 0);
+        }
+
+        const mate = switch (data.vptr) {
+            .sphere_idx => self.spheres_buf.items[data.vptr.sphere_idx].material,
+            .plane_idx => self.planes_buf.items[data.vptr.plane_idx].material,
+        };
+
+        // material is not reflective
+        if (mate.reflective == 0) return Color.init(0, 0, 0);
+
+        // bounce ray and return what we find
+        const reflected_ray = Ray.init(data.over_point, data.reflect_vector);
+        const color = self.colorAt(reflected_ray, alctr, reflections_remaining - 1);
+
+        return color.scaled(mate.reflective);
+    }
+
+    pub fn colorAt(self: This, ray: Ray, alctr: std.mem.Allocator, reflections_remaining: usize) Color {
         var ixs = Intersections.init(alctr, .{});
         defer ixs.deinit();
 
@@ -128,10 +152,20 @@ pub const World = struct {
 
         if (ixs.hit()) |hit| {
             const data = switch (std.meta.activeTag(hit.vptr)) {
-                .sphere_idx => HitData.init(ray, hit, vol.Sphere, self.spheres_buf.items[hit.vptr.sphere_idx]),
-                .plane_idx => HitData.init(ray, hit, vol.Plane, self.planes_buf.items[hit.vptr.plane_idx]),
+                .sphere_idx => HitData.init(
+                    ray,
+                    hit,
+                    vol.Sphere,
+                    self.spheres_buf.items[hit.vptr.sphere_idx],
+                ),
+                .plane_idx => HitData.init(
+                    ray,
+                    hit,
+                    vol.Plane,
+                    self.planes_buf.items[hit.vptr.plane_idx],
+                ),
             };
-            return self.shadeHit(data, alctr);
+            return self.shadeHit(data, alctr, reflections_remaining);
         } else {
             return Color.init(0, 0, 0);
         }
@@ -330,7 +364,7 @@ test "Shading an intersection" {
     const x = Intersection.init(4.0, VolumePtr{ .sphere_idx = 0 });
     const d = HitData.init(r, x, vol.Sphere, s);
 
-    const c = w.shadeHit(d, alctr);
+    const c = w.shadeHit(d, alctr, 0);
 
     defer print(c);
 
@@ -351,7 +385,7 @@ test "Shading an intersection from the inside" {
     const x = Intersection.init(0.5, VolumePtr{ .sphere_idx = 1 });
     const d = HitData.init(r, x, vol.Sphere, s);
 
-    const c = w.shadeHit(d, alctr);
+    const c = w.shadeHit(d, alctr, 0);
 
     // TODO book tests are imprecise
     try expect(c.equalsTolerance(Color.init(0.90498, 0.90498, 0.90498), 100_000_000_000));
@@ -379,7 +413,7 @@ test "Shading an intersection in shadow" {
     const x = Intersection.init(4, VolumePtr{ .sphere_idx = 1 });
     const d = HitData.init(r, x, vol.Sphere, s);
 
-    const c = w.shadeHit(d, alctr);
+    const c = w.shadeHit(d, alctr, 0);
 
     // TODO book tests are imprecise
     try expect(c.equals(Color.init(0.1, 0.1, 0.1)));
@@ -393,7 +427,7 @@ test "The color when a ray misses" {
 
     const r = Ray.init(Point.init(0, 0, -5), Vector.init(0, 1, 0));
 
-    const c = w.colorAt(r, alctr);
+    const c = w.colorAt(r, alctr, 0);
 
     try expect(c.equals(Color.init(0, 0, 0)));
 }
@@ -406,7 +440,7 @@ test "The color when a ray hits" {
 
     const r = Ray.init(Point.init(0, 0, -5), Vector.init(0, 0, 1));
 
-    const c = w.colorAt(r, alctr);
+    const c = w.colorAt(r, alctr, 0);
 
     // TODO book tests are imprecise
     try expect(c.equalsTolerance(Color.init(0.38066, 0.47583, 0.2855), 100_000_000_000));
@@ -423,7 +457,7 @@ test "The color with an intersections behind the ray" {
 
     const r = Ray.init(Point.init(0, 0, 0.75), Vector.init(0, 0, -1));
 
-    const c = w.colorAt(r, alctr);
+    const c = w.colorAt(r, alctr, 0);
 
     try expect(c.equals(w.spheres_buf.items[1].material.color_map.atC(0, 0, 0)));
 }
@@ -538,6 +572,104 @@ test "There is no shadow when an object is behind the point" {
     const p = Point.init(-2, 2, -2);
 
     try expect(w.isShadowed(p, w.lights_buf.items[0], alctr) == false);
+}
+
+test "The reflected color for a nonreflective material" {
+    const alctr = std.testing.allocator;
+    var w = getTestWorld(alctr);
+    defer w.deinit();
+
+    w.spheres_buf.items[1].material.ambient = 1;
+
+    const i = Intersection.init(1, VolumePtr{ .sphere_idx = 1 });
+    const r = Ray.init(Point.init(0, 0, 0), Vector.init(0, 0, 1));
+    const data = HitData.init(r, i, vol.Sphere, w.spheres_buf.items[1]);
+    const color = w.reflectedColor(data, alctr, 1);
+
+    try expect(color.equals(Color.init(0, 0, 0)));
+}
+
+test "The reflected color for a reflective material" {
+    const alctr = std.testing.allocator;
+    var w = getTestWorld(alctr);
+    defer w.deinit();
+
+    var pln = w.addVolume(vol.Plane);
+    pln.ptr.transform = trans.makeTranslation(0, -1, 0);
+    pln.ptr.material.reflective = 0.5;
+
+    const r = Ray.init(
+        Point.init(0, 0, -3),
+        Vector.init(0, -@sqrt(2.0) / 2.0, @sqrt(2.0) / 2.0),
+    );
+    const i = Intersection.init(@sqrt(2.0), pln.handle);
+    const data = HitData.init(r, i, vol.Plane, pln.ptr.*);
+    const color = w.reflectedColor(data, alctr, 1);
+
+    // TODO tests in book are imprecise
+    try expect(color.equalsTolerance(Color.init(0.19032, 0.2379, 0.14274), 100_000_000_000));
+}
+
+test "shadeHit color for a reflective material" {
+    const alctr = std.testing.allocator;
+    var w = getTestWorld(alctr);
+    defer w.deinit();
+
+    var pln = w.addVolume(vol.Plane);
+    pln.ptr.transform = trans.makeTranslation(0, -1, 0);
+    pln.ptr.material.reflective = 0.5;
+
+    const r = Ray.init(
+        Point.init(0, 0, -3),
+        Vector.init(0, -@sqrt(2.0) / 2.0, @sqrt(2.0) / 2.0),
+    );
+    const i = Intersection.init(@sqrt(2.0), pln.handle);
+    const data = HitData.init(r, i, vol.Plane, pln.ptr.*);
+    const color = w.shadeHit(data, alctr, 1);
+
+    // TODO tests in book are imprecise
+    try expect(color.equalsTolerance(Color.init(0.87677, 0.92436, 0.82918), 100_000_000_000));
+}
+
+test "colorAt doesn't get stuck in infinite recursion" {
+    const alctr = std.testing.allocator;
+    var w = getTestWorld(alctr);
+    defer w.deinit();
+
+    _ = w.addLight(PointLight);
+
+    var pln1 = w.addVolume(vol.Plane);
+    pln1.ptr.material.reflective = 1.0;
+    pln1.ptr.transform = trans.makeTranslation(0, -1, 0);
+
+    var pln2 = w.addVolume(vol.Plane);
+    pln2.ptr.material.reflective = 1.0;
+    pln2.ptr.transform = trans.makeTranslation(0, 1, 0);
+
+    var ray = Ray.initC(0, 0, 0, 0, 1, 0);
+
+    // test passes if this returns
+    _ = w.colorAt(ray, alctr, 4);
+}
+
+test "The reflected color at the maximum recursive depth" {
+    const alctr = std.testing.allocator;
+    var w = getTestWorld(alctr);
+    defer w.deinit();
+
+    var pln = w.addVolume(vol.Plane);
+    pln.ptr.transform = trans.makeTranslation(0, -1, 0);
+    pln.ptr.material.reflective = 0.5;
+
+    const r = Ray.init(
+        Point.init(0, 0, -3),
+        Vector.init(0, -@sqrt(2.0) / 2.0, @sqrt(2.0) / 2.0),
+    );
+    const i = Intersection.init(@sqrt(2.0), pln.handle);
+    const data = HitData.init(r, i, vol.Plane, pln.ptr.*);
+    const color = w.reflectedColor(data, alctr, 0);
+
+    try expect(color.equals(Color.init(0, 0, 0)));
 }
 
 const Tuple = @import("tuple.zig").Tuple;

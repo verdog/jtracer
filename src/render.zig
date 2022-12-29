@@ -58,7 +58,7 @@ pub fn startRenderEngine(world: World, cam: Camera, qan: *Qanvas, alctr: std.mem
     var prog = prog_ctx.start("Pixels", qan.width * qan.height);
 
     // TODO base this size on cache size?
-    var chunks = getChunks(16, qan.*, alctr);
+    var chunks = getChunks(128, qan.*, alctr);
     defer alctr.free(chunks);
 
     var prng = std.rand.DefaultPrng.init(0);
@@ -76,7 +76,7 @@ pub fn startRenderEngine(world: World, cam: Camera, qan: *Qanvas, alctr: std.mem
     var threads_working_mem = threads_working_mem_buf[0..num_threads];
 
     for (threads_working_mem) |*slc| {
-        slc.* = alctr.alloc(u8, 1024) catch unreachable;
+        slc.* = alctr.alloc(u8, 1024 * 16) catch unreachable;
     }
 
     defer for (threads_working_mem) |slc| {
@@ -183,7 +183,8 @@ fn render(
     while (pix_y < end_y) : (pix_y += 1) {
         var pix_x: i64 = start_x;
         while (pix_x < end_x) : (pix_x += 1) {
-            qan.write(world.colorAt(cam.rayForPixel(pix_x, pix_y), alctr), pix_x, pix_y);
+            // 8 reflections
+            qan.write(world.colorAt(cam.rayForPixel(pix_x, pix_y), alctr, 8), pix_x, pix_y);
             prog.completeOne();
         }
     }

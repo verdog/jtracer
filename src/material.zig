@@ -192,11 +192,12 @@ pub const ColorMap = union(enum) {
 
 pub const Material = struct {
     color_map: ColorMap,
+    transform: trans.Transform = trans.Transform{},
     ambient: f64,
     diffuse: f64,
     specular: f64,
     shininess: f64,
-    transform: trans.Transform = trans.Transform{},
+    reflective: f64,
 
     pub fn init() This {
         return .{
@@ -205,6 +206,7 @@ pub const Material = struct {
             .diffuse = 0.9,
             .specular = 0.9,
             .shininess = 200.0,
+            .reflective = 0.0,
         };
     }
 
@@ -492,4 +494,9 @@ test "A ThreeDCheckedColor should repeat in z" {
         errdefer print(c);
         try expect(c.equals(Color.init(0, 0, 0)));
     }
+}
+
+test "Reflectivity for the default material" {
+    const m = Material.init();
+    try expect(m.reflective == 0.0);
 }
