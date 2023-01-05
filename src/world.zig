@@ -69,6 +69,28 @@ pub const World = struct {
         };
     }
 
+    fn PropertyT(comptime name: []const u8) type {
+        const fs = @typeInfo(vol.Sphere).Struct.fields;
+        for (fs) |fd| {
+            if (std.mem.eql(u8, name, fd.name)) {
+                return fd.type;
+            }
+        }
+        unreachable;
+    }
+
+    /// Assumes that vol.Sphere defines what fields are available
+    pub fn getProperty(
+        self: This,
+        volp: VolumePtr,
+        comptime property: []const u8,
+    ) PropertyT(property) {
+        return switch (std.meta.activeTag(volp)) {
+            .sphere_idx => return @field(self.spheres_buf.items[volp.sphere_idx], property),
+            .plane_idx => return @field(self.planes_buf.items[volp.plane_idx], property),
+        };
+    }
+
     pub fn isShadowed(self: This, point: Tuple, lht: PointLight, alctr: std.mem.Allocator) bool {
         const p2l = lht.position.minus(point);
         const distance = p2l.magnitude();
@@ -101,14 +123,8 @@ pub const World = struct {
     }
 
     pub fn shadeHit(self: This, data: HitData, alctr: std.mem.Allocator, reflections_remaining: usize) Color {
-        const tfm = switch (data.vptr) {
-            .sphere_idx => |idx| self.spheres_buf.items[idx].transform,
-            .plane_idx => |idx| self.planes_buf.items[idx].transform,
-        };
-        const mate = switch (data.vptr) {
-            .sphere_idx => self.spheres_buf.items[data.vptr.sphere_idx].material,
-            .plane_idx => self.planes_buf.items[data.vptr.plane_idx].material,
-        };
+        const tfm = self.getProperty(data.intersection.vptr, "transform");
+        const mate = self.getProperty(data.intersection.vptr, "material");
 
         var color = Color.init(0, 0, 0);
 
@@ -129,10 +145,7 @@ pub const World = struct {
             return Color.init(0, 0, 0);
         }
 
-        const mate = switch (data.vptr) {
-            .sphere_idx => self.spheres_buf.items[data.vptr.sphere_idx].material,
-            .plane_idx => self.planes_buf.items[data.vptr.plane_idx].material,
-        };
+        const mate = self.getProperty(data.intersection.vptr, "material");
 
         // material is not reflective
         if (mate.reflective == 0) return Color.init(0, 0, 0);
@@ -151,20 +164,12 @@ pub const World = struct {
         self.intersect(ray, &ixs);
 
         if (ixs.hit()) |hit| {
-            const data = switch (std.meta.activeTag(hit.vptr)) {
-                .sphere_idx => HitData.init(
-                    ray,
-                    hit,
-                    vol.Sphere,
-                    self.spheres_buf.items[hit.vptr.sphere_idx],
-                ),
-                .plane_idx => HitData.init(
-                    ray,
-                    hit,
-                    vol.Plane,
-                    self.planes_buf.items[hit.vptr.plane_idx],
-                ),
+            const normal = switch (std.meta.activeTag(hit.vptr)) {
+                .sphere_idx => self.spheres_buf.items[hit.vptr.sphere_idx].normalAt(ray.position(hit.t)),
+                .plane_idx => self.planes_buf.items[hit.vptr.plane_idx].normalAt(ray.position(hit.t)),
             };
+            // TODO calculate n1, n2
+            const data = HitData.init(ray, hit, normal, 1, 1);
             return self.shadeHit(data, alctr, reflections_remaining);
         } else {
             return Color.init(0, 0, 0);
@@ -362,7 +367,7 @@ test "Shading an intersection" {
     const r = Ray.init(Point.init(0, 0, -5), Vector.init(0, 0, 1));
     const s = w.spheres_buf.items[0];
     const x = Intersection.init(4.0, VolumePtr{ .sphere_idx = 0 });
-    const d = HitData.init(r, x, vol.Sphere, s);
+    const d = HitData.init(r, x, s.normalAt(r.position(x.t)), 1, 1);
 
     const c = w.shadeHit(d, alctr, 0);
 
@@ -383,7 +388,7 @@ test "Shading an intersection from the inside" {
     const r = Ray.init(Point.init(0, 0, 0), Vector.init(0, 0, 1));
     const s = w.spheres_buf.items[1];
     const x = Intersection.init(0.5, VolumePtr{ .sphere_idx = 1 });
-    const d = HitData.init(r, x, vol.Sphere, s);
+    const d = HitData.init(r, x, s.normalAt(r.position(x.t)), 1, 1);
 
     const c = w.shadeHit(d, alctr, 0);
 
@@ -411,7 +416,7 @@ test "Shading an intersection in shadow" {
     const r = Ray.init(Point.init(0, 0, 5), Vector.init(0, 0, 1));
     const s = w.spheres_buf.items[1];
     const x = Intersection.init(4, VolumePtr{ .sphere_idx = 1 });
-    const d = HitData.init(r, x, vol.Sphere, s);
+    const d = HitData.init(r, x, s.normalAt(r.position(x.t)), 1, 1);
 
     const c = w.shadeHit(d, alctr, 0);
 
@@ -583,7 +588,7 @@ test "The reflected color for a nonreflective material" {
 
     const i = Intersection.init(1, VolumePtr{ .sphere_idx = 1 });
     const r = Ray.init(Point.init(0, 0, 0), Vector.init(0, 0, 1));
-    const data = HitData.init(r, i, vol.Sphere, w.spheres_buf.items[1]);
+    const data = HitData.init(r, i, w.spheres_buf.items[1].normalAt(r.position(i.t)), 1, 1);
     const color = w.reflectedColor(data, alctr, 1);
 
     try expect(color.equals(Color.init(0, 0, 0)));
@@ -603,7 +608,7 @@ test "The reflected color for a reflective material" {
         Vector.init(0, -@sqrt(2.0) / 2.0, @sqrt(2.0) / 2.0),
     );
     const i = Intersection.init(@sqrt(2.0), pln.handle);
-    const data = HitData.init(r, i, vol.Plane, pln.ptr.*);
+    const data = HitData.init(r, i, pln.ptr.normalAt(r.position(i.t)), 1, 1);
     const color = w.reflectedColor(data, alctr, 1);
 
     // TODO tests in book are imprecise
@@ -624,7 +629,7 @@ test "shadeHit color for a reflective material" {
         Vector.init(0, -@sqrt(2.0) / 2.0, @sqrt(2.0) / 2.0),
     );
     const i = Intersection.init(@sqrt(2.0), pln.handle);
-    const data = HitData.init(r, i, vol.Plane, pln.ptr.*);
+    const data = HitData.init(r, i, pln.ptr.normalAt(r.position(i.t)), 1, 1);
     const color = w.shadeHit(data, alctr, 1);
 
     // TODO tests in book are imprecise
@@ -666,10 +671,29 @@ test "The reflected color at the maximum recursive depth" {
         Vector.init(0, -@sqrt(2.0) / 2.0, @sqrt(2.0) / 2.0),
     );
     const i = Intersection.init(@sqrt(2.0), pln.handle);
-    const data = HitData.init(r, i, vol.Plane, pln.ptr.*);
+    const data = HitData.init(r, i, pln.ptr.normalAt(r.position(i.t)), 1, 1);
     const color = w.reflectedColor(data, alctr, 0);
 
     try expect(color.equals(Color.init(0, 0, 0)));
+}
+
+test "getProperty" {
+    const alctr = std.testing.allocator;
+    var w = World.init(alctr);
+    defer w.deinit();
+
+    var sphere = w.addVolume(vol.Sphere);
+    sphere.ptr.transform = trans.makeTranslation(0, 10, 0);
+    sphere.ptr.material.ambient = 0.75;
+
+    var plane = w.addVolume(vol.Plane);
+    plane.ptr.transform = trans.makeTranslation(0, -10, 0);
+    plane.ptr.material.ambient = 0.25;
+
+    try expect(w.getProperty(sphere.handle, "material").ambient == 0.75);
+    try expect(w.getProperty(sphere.handle, "transform").t.equals(trans.makeTranslation(0, 10, 0).t));
+    try expect(w.getProperty(plane.handle, "material").ambient == 0.25);
+    try expect(w.getProperty(plane.handle, "transform").t.equals(trans.makeTranslation(0, -10, 0).t));
 }
 
 const Tuple = @import("tuple.zig").Tuple;

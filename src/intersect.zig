@@ -3,10 +3,8 @@
 /// get information that will be needed for shading based on an intersection
 /// and the ray that generated it
 pub const HitData = struct {
-    /// the t value of the hit
-    t: f64,
-    /// the volume that was hit
-    vptr: VolPtr,
+    /// the intersection that the HitData is based on
+    intersection: Intersection,
     /// the point of the hit in world space
     point: Tuple,
     /// point slightly offset by normal_vector
@@ -21,12 +19,14 @@ pub const HitData = struct {
     reflect_vector: Tuple,
     /// true if the normal vector points towards the inside of the shape
     inside: bool,
+    /// index of refraction of the material that the hit is exiting
+    n1: f64,
+    /// index of refraction of the material that the hit is entering
+    n2: f64,
 
-    // TODO fix this interface to somehow work with only the vptr
-    // TODO pass the normal vector as parameter instead of passing the volume
-    pub fn init(r: Ray, x: Intersection, comptime T: type, volu: T) This {
+    pub fn init(r: Ray, x: Intersection, normal: Tuple, n1: f64, n2: f64) This {
         const point = r.position(x.t);
-        var normal_vector = volu.normalAt(point);
+        var normal_vector = normal;
         const eye_vector = r.direction.scaled(-1);
         const inside = eye_vector.dot(normal_vector) < 0;
         if (inside) normal_vector = normal_vector.scaled(-1);
@@ -34,14 +34,15 @@ pub const HitData = struct {
         const reflect_vector = r.direction.reflected(normal_vector);
 
         return .{
-            .t = x.t,
-            .vptr = x.vptr,
+            .intersection = x,
             .point = point,
             .over_point = over_point,
             .eye_vector = eye_vector,
             .normal_vector = normal_vector,
             .reflect_vector = reflect_vector,
             .inside = inside,
+            .n1 = n1,
+            .n2 = n2,
         };
     }
 
@@ -354,10 +355,10 @@ test "HitData" {
     const r = Ray.init(Point.init(0, 0, -5), Vector.init(0, 0, 1));
     const s = vol.Sphere.init();
     const x = Intersection.init(4.0, VolPtr{ .sphere_idx = 0 });
-    const data = HitData.init(r, x, vol.Sphere, s);
+    const data = HitData.init(r, x, s.normalAt(r.position(x.t)), 1, 1);
 
-    try expect(data.t == x.t);
-    try expect(std.meta.eql(data.vptr, VolPtr{ .sphere_idx = 0 }));
+    try expect(data.intersection.t == x.t);
+    try expect(std.meta.eql(data.intersection.vptr, VolPtr{ .sphere_idx = 0 }));
     try expect(data.point.equals(Point.init(0, 0, -1)));
     try expect(data.eye_vector.equals(Vector.init(0, 0, -1)));
     try expect(data.normal_vector.equals(Vector.init(0, 0, -1)));
@@ -367,7 +368,7 @@ test "HitData: eye vector outside of the hit shape" {
     const r = Ray.init(Point.init(0, 0, -5), Vector.init(0, 0, 1));
     const s = vol.Sphere.init();
     const x = Intersection.init(4.0, VolPtr{ .sphere_idx = 0 });
-    const data = HitData.init(r, x, vol.Sphere, s);
+    const data = HitData.init(r, x, s.normalAt(r.position(x.t)), 1, 1);
 
     try expect(data.inside == false);
 }
@@ -376,7 +377,7 @@ test "HitData: eye vector inside of the hit shape" {
     const r = Ray.init(Point.init(0, 0, 0), Vector.init(0, 0, 1));
     const s = vol.Sphere.init();
     const x = Intersection.init(1.0, VolPtr{ .sphere_idx = 0 });
-    const data = HitData.init(r, x, vol.Sphere, s);
+    const data = HitData.init(r, x, s.normalAt(r.position(x.t)), 1, 1);
 
     try expect(data.point.equals(Point.init(0, 0, 1)));
     try expect(data.inside == true);
@@ -390,7 +391,7 @@ test "HitData: the hit should offset the point" {
     var s = vol.Sphere.init();
     s.transform = trans.makeTranslation(0, 0, 1);
     const x = Intersection.init(5.0, VolPtr{ .sphere_idx = 0 });
-    const data = HitData.init(r, x, vol.Sphere, s);
+    const data = HitData.init(r, x, s.normalAt(r.position(x.t)), 1, 1);
 
     try expect(data.over_point.z() < -mymath.floatTolerance * 16);
     try expect(data.point.z() > data.over_point.z());
@@ -474,10 +475,12 @@ test "Precomputing the reflection vector" {
     const r = Ray.init(Point.init(0, 1, -1), Vector.init(0, -@sqrt(2.0) / 2.0, @sqrt(2.0) / 2.0));
     const i = Intersection.init(@sqrt(2.0), VolPtr{ .plane_idx = 0 });
 
-    const data = HitData.init(r, i, vol.Plane, pl);
+    const data = HitData.init(r, i, pl.normalAt(r.position(i.t)), 1, 1);
 
     try expect(data.reflect_vector.equals(Vector.init(0, @sqrt(2.0) / 2.0, @sqrt(2.0) / 2.0)));
 }
+
+test "Finding n1 and n2 at various intersections" {}
 
 const std = @import("std");
 

@@ -190,6 +190,13 @@ pub const ColorMap = union(enum) {
     }
 };
 
+// refractive index for various materials:
+// - vacuum: 1
+// - air: 1.00029
+// - water: 1.333
+// - glass: 1.52
+// - diamond: 2.417
+
 pub const Material = struct {
     color_map: ColorMap,
     transform: trans.Transform = trans.Transform{},
@@ -500,3 +507,10 @@ test "Reflectivity for the default material" {
     const m = Material.init();
     try expect(m.reflective == 0.0);
 }
+
+// TODO enable
+// test "Transparency and refractive index for the default material" {
+//     const m = Material.init();
+//     try expect(m.transparency == 0.0);
+//     try expect(m.refractive_index == 1.0);
+// }

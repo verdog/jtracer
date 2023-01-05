@@ -216,4 +216,5 @@ test {
     _ = @import("intersect.zig");
     _ = @import("light.zig");
     _ = @import("material.zig");
+    _ = @import("prefab.zig");
 }
