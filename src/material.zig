@@ -9,6 +9,19 @@ const Tuple = @import("tuple.zig").Tuple;
 const Point = @import("tuple.zig").Point;
 const Color = @import("color.zig").Color;
 
+pub const TestColor = struct {
+    pub fn init() ColorMap {
+        return ColorMap{ .@"test" = TestColor{} };
+    }
+
+    pub fn at(self: This, point: Tuple) Color {
+        _ = self;
+        return Color.init(point.x(), point.y(), point.z());
+    }
+
+    const This = @This();
+};
+
 pub const FlatColor = struct {
     color: Color,
 
@@ -159,6 +172,7 @@ pub const ThreeDCheckedColor = struct {
 };
 
 pub const ColorMap = union(enum) {
+    @"test": TestColor,
     flat: FlatColor,
     stripe: StripeColor,
     ring: RingColor,
@@ -190,13 +204,6 @@ pub const ColorMap = union(enum) {
     }
 };
 
-// refractive index for various materials:
-// - vacuum: 1
-// - air: 1.00029
-// - water: 1.333
-// - glass: 1.52
-// - diamond: 2.417
-
 pub const Material = struct {
     color_map: ColorMap,
     transform: trans.Transform = trans.Transform{},
@@ -205,6 +212,14 @@ pub const Material = struct {
     specular: f64,
     shininess: f64,
     reflective: f64,
+    transparency: f64,
+    // refractive index examples for various materials:
+    // - vacuum: 1
+    // - air: 1.00029
+    // - water: 1.333
+    // - glass: 1.52
+    // - diamond: 2.417
+    refractive_index: f64,
 
     pub fn init() This {
         return .{
@@ -214,6 +229,8 @@ pub const Material = struct {
             .specular = 0.9,
             .shininess = 200.0,
             .reflective = 0.0,
+            .transparency = 0.0,
+            .refractive_index = 1.0,
         };
     }
 
@@ -231,6 +248,30 @@ test "The default material" {
     try expect(m.diffuse == 0.9);
     try expect(m.specular == 0.9);
     try expect(m.shininess == 200.0);
+}
+
+test "Test pattern with an object transformation" {
+    const c = TestColor.init();
+    const obj_tfm = trans.makeScaling(2, 2, 2);
+    const mat_tfm = trans.Transform{};
+
+    try expect(c.atT(Point.init(2, 3, 4), obj_tfm, mat_tfm).equals(Color.init(1, 1.5, 2)));
+}
+
+test "Test pattern with a pattern transformation" {
+    const c = TestColor.init();
+    const obj_tfm = trans.Transform{};
+    const mat_tfm = trans.makeScaling(2, 2, 2);
+
+    try expect(c.atT(Point.init(2, 3, 4), obj_tfm, mat_tfm).equals(Color.init(1, 1.5, 2)));
+}
+
+test "Test pattern with both a pattern and object transformation" {
+    const c = TestColor.init();
+    const obj_tfm = trans.makeScaling(2, 2, 2);
+    const mat_tfm = trans.makeTranslation(0.5, 1, 1.5);
+
+    try expect(c.atT(Point.init(2.5, 3, 3.5), obj_tfm, mat_tfm).equals(Color.init(0.75, 0.5, 0.25)));
 }
 
 test "Flat color is the same everywhere" {
@@ -508,9 +549,8 @@ test "Reflectivity for the default material" {
     try expect(m.reflective == 0.0);
 }
 
-// TODO enable
-// test "Transparency and refractive index for the default material" {
-//     const m = Material.init();
-//     try expect(m.transparency == 0.0);
-//     try expect(m.refractive_index == 1.0);
-// }
+test "Transparency and refractive index for the default material" {
+    const m = Material.init();
+    try expect(m.transparency == 0.0);
+    try expect(m.refractive_index == 1.0);
+}

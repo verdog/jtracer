@@ -93,11 +93,11 @@ pub fn main() !void {
             sph.ptr.material.diffuse = 0.7;
             sph.ptr.material.specular = 0.3;
             sph.ptr.material.transform = sph.ptr.material.transform.chain(.{
-                trans.makeTranslation(1, 0, 0),
+                trans.makeTranslation(1, 0, 5),
                 trans.makeScaling(2, 2, 2),
             });
             sph.ptr.transform = sph.ptr.transform.chain(.{
-                trans.makeTranslation(0, 1, -0.5),
+                trans.makeTranslation(-5, 1, 12),
             });
         }
         {
@@ -123,9 +123,13 @@ pub fn main() !void {
             sph.ptr.material.color_map = mat.FlatColor.init(
                 Color.init(0.05, 0.05, 0.05),
             );
-            sph.ptr.material.reflective = 1;
+            sph.ptr.material.diffuse = 0.1;
+            sph.ptr.material.transparency = 0.9;
+            sph.ptr.material.refractive_index = 1.33;
+            sph.ptr.material.specular = 1;
+            sph.ptr.material.shininess = 300;
             sph.ptr.transform = sph.ptr.transform.chain(.{
-                trans.makeTranslation(1, 2.4, 5),
+                trans.makeTranslation(0, 2.4, 5),
                 trans.makeScaling(2.4, 2.4, 2.4),
             });
         }
@@ -139,7 +143,7 @@ pub fn main() !void {
             ));
             pln.ptr.material.specular = 0.1;
             pln.ptr.material.diffuse = 1;
-            pln.ptr.material.reflective = 0.2;
+            // pln.ptr.material.reflective = 0.2;
             pln.ptr.transform = pln.ptr.transform.chain(.{
                 trans.makeTranslation(0, 0, 0),
             });
@@ -151,17 +155,11 @@ pub fn main() !void {
             std.math.pi / 2.5,
         );
 
+        // slightly down
         const from = Point.init(0, 3.3, -6);
         const to = Point.init(0, 2, 0);
         const up = Vector.init(0, 1, 0);
 
-        // const from = Point.init(0, 6, 0);
-        // const to = Point.init(0, 1, 0);
-        // const up = Vector.init(0, 0, 1);
-
-        // const from = Point.init(0, 0, 6);
-        // const to = Point.init(0, 0, 0);
-        // const up = Vector.init(0, 1, 0);
         cam.transform = trans.makeView(from, to, up);
 
         var thr = std.Thread.spawn(.{}, World.render, .{ world, cam, &qan, gpa }) catch unreachable;

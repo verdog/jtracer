@@ -9,6 +9,8 @@ pub const HitData = struct {
     point: Tuple,
     /// point slightly offset by normal_vector
     over_point: Tuple,
+    /// point slightly offset by -normal_vector
+    under_point: Tuple,
     /// the eye vector, going from point to the origin point of the
     /// ray that generated the intersection
     eye_vector: Tuple,
@@ -31,12 +33,14 @@ pub const HitData = struct {
         const inside = eye_vector.dot(normal_vector) < 0;
         if (inside) normal_vector = normal_vector.scaled(-1);
         const over_point = point.plus(normal_vector.scaled(32 * mymath.floatTolerance));
+        const under_point = point.plus(normal_vector.scaled(-32 * mymath.floatTolerance));
         const reflect_vector = r.direction.reflected(normal_vector);
 
         return .{
             .intersection = x,
             .point = point,
             .over_point = over_point,
+            .under_point = under_point,
             .eye_vector = eye_vector,
             .normal_vector = normal_vector,
             .reflect_vector = reflect_vector,
@@ -66,6 +70,7 @@ pub const Intersection = struct {
 
 pub const Intersections = struct {
     ixs: std.ArrayList(Intersection),
+    containers: std.ArrayList(Intersection),
 
     pub fn init(alctr: std.mem.Allocator, inits: anytype) This {
         const InitsT = @TypeOf(inits);
@@ -77,6 +82,7 @@ pub const Intersections = struct {
 
         var xs = This{
             .ixs = std.ArrayList(Intersection).init(alctr),
+            .containers = std.ArrayList(Intersection).init(alctr),
         };
 
         inline for (fields_info) |field| {
@@ -88,6 +94,7 @@ pub const Intersections = struct {
 
     pub fn deinit(self: This) void {
         self.ixs.deinit();
+        self.containers.deinit();
     }
 
     pub fn intersect(self: *This, volu: anytype, vptr: VolPtr, ray: Ray) void {
@@ -135,30 +142,83 @@ pub const Intersections = struct {
         self.ixs.clearRetainingCapacity();
     }
 
-    /// order interections such that the intersection with the lowest t >= 0
-    /// is at ixs.items[0], sorted in increasing t order. intersections with
-    /// t < 0 get moved to the end in an unspecified order.
+    /// sort intersections by increasing t value
     pub fn order(self: *This) void {
         const lt = struct {
             fn lt(_: void, lhs: Intersection, rhs: Intersection) bool {
-                // effective lhs t
-                const eff_lhs_t = if (lhs.t >= 0) lhs.t else std.math.floatMax(f64);
-                const eff_rhs_t = if (rhs.t >= 0) rhs.t else std.math.floatMax(f64);
-                return eff_lhs_t < eff_rhs_t;
+                return lhs.t < rhs.t;
             }
         }.lt;
 
         std.sort.insertionSort(Intersection, self.ixs.items, {}, lt);
     }
 
-    // TODO should hit() have side effects?
     pub fn hit(self: *This) ?Intersection {
-        self.order();
-        if (self.ixs.items.len > 0 and self.ixs.items[0].t >= 0) {
-            return self.ixs.items[0];
-        } else {
-            return null;
+        // find smallest positive t
+        var result: ?Intersection = null;
+
+        for (self.ixs.items) |x| {
+            if (x.t > 0 and (result == null or x.t < result.?.t)) {
+                result = x;
+            }
         }
+
+        return result;
+    }
+
+    const Boundary = struct {
+        // lesser has a smaller t value than greater
+        lesser: ?VolPtr,
+        greater: ?VolPtr,
+    };
+
+    /// Given an intersection, search internal list of intersections and return `exiting`
+    /// and `entering`, where `exiting` is a VolPtr to the object that the hit is escaping,
+    /// and `entering` is a VolPtr to the object that the hit is entering. Both fields of
+    /// the return struct are optional, since a hit might be exiting into nothing or vice versa.
+    pub fn findBoundaryObjects(self: *This, x: Intersection) Boundary {
+        self.order();
+        self.containers.clearRetainingCapacity();
+        var result = Boundary{
+            .lesser = null,
+            .greater = null,
+        };
+
+        for (self.ixs.items) |my_x| {
+            if (std.meta.eql(x, my_x)) {
+                if (self.containers.items.len == 0) {
+                    result.lesser = null;
+                } else {
+                    result.lesser = self.containers.items[self.containers.items.len - 1].vptr;
+                }
+            }
+
+            const my_x_idx: ?usize = blk: {
+                for (self.containers.items) |c, i| {
+                    if (std.meta.eql(my_x.vptr, c.vptr)) {
+                        break :blk i;
+                    }
+                }
+                break :blk null;
+            };
+
+            if (my_x_idx) |idx| {
+                _ = self.containers.orderedRemove(idx);
+            } else {
+                self.containers.append(my_x) catch unreachable;
+            }
+
+            if (std.meta.eql(x, my_x)) {
+                if (self.containers.items.len == 0) {
+                    result.greater = null;
+                } else {
+                    result.greater = self.containers.items[self.containers.items.len - 1].vptr;
+                }
+                break;
+            }
+        }
+
+        return result;
     }
 
     const This = @This();
@@ -397,6 +457,19 @@ test "HitData: the hit should offset the point" {
     try expect(data.point.z() > data.over_point.z());
 }
 
+test "HitData: The under point is offset below the surface" {
+    const r = Ray.initC(0, 0, -5, 0, 0, 1);
+    var s = vol.Sphere.init();
+    s.transform = trans.makeTranslation(0, 0, 1);
+    const sptr = VolPtr{ .sphere_idx = 0 };
+    const x = Intersection.init(5, sptr);
+
+    const data = HitData.init(r, x, s.normalAt(r.position(x.t)), 1, 1);
+
+    try expect(data.under_point.z() > mymath.floatTolerance * 16);
+    try expect(data.point.z() < data.under_point.z());
+}
+
 test "Intersect with a ray parallel to the plane should yield nothing" {
     const p = vol.Plane.init();
     const pptr = VolPtr{ .plane_idx = 0 };
@@ -480,8 +553,6 @@ test "Precomputing the reflection vector" {
     try expect(data.reflect_vector.equals(Vector.init(0, @sqrt(2.0) / 2.0, @sqrt(2.0) / 2.0)));
 }
 
-test "Finding n1 and n2 at various intersections" {}
-
 const std = @import("std");
 
 const Tuple = @import("tuple.zig").Tuple;
@@ -495,6 +566,7 @@ const trans = @import("transform.zig");
 const mtx = @import("matrix.zig");
 const mymath = @import("mymath.zig");
 const vol = @import("volume.zig");
+const prefab = @import("prefab.zig");
 
 const expect = std.testing.expect;
 const print = @import("u.zig").print;

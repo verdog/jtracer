@@ -122,7 +122,12 @@ pub const World = struct {
         ixs.order();
     }
 
-    pub fn shadeHit(self: This, data: HitData, alctr: std.mem.Allocator, reflections_remaining: usize) Color {
+    pub fn shadeHit(
+        self: This,
+        data: HitData,
+        alctr: std.mem.Allocator,
+        reflections_remaining: usize,
+    ) Color {
         const tfm = self.getProperty(data.intersection.vptr, "transform");
         const mate = self.getProperty(data.intersection.vptr, "material");
 
@@ -135,9 +140,14 @@ pub const World = struct {
         }
 
         // reflected color
-        var rcolor = self.reflectedColor(data, alctr, reflections_remaining);
+        var ref_color = self.reflectedColor(data, alctr, reflections_remaining);
 
-        return color.plus(rcolor);
+        var opaque_color = color.plus(ref_color);
+
+        // refracted color
+        var raf_color = self.refractedColor(data, alctr, reflections_remaining);
+
+        return opaque_color.plus(raf_color);
     }
 
     pub fn reflectedColor(self: This, data: HitData, alctr: std.mem.Allocator, reflections_remaining: usize) Color {
@@ -157,6 +167,37 @@ pub const World = struct {
         return color.scaled(mate.reflective);
     }
 
+    pub fn refractedColor(self: This, data: HitData, alctr: std.mem.Allocator, refractions_remaining: usize) Color {
+        if (refractions_remaining == 0) {
+            return Color.init(0, 0, 0);
+        }
+
+        const mate = self.getProperty(data.intersection.vptr, "material");
+
+        // material is not refractive
+        if (mate.transparency == 0) return Color.init(0, 0, 0);
+
+        const n_ratio = data.n1 / data.n2;
+        // cos(theta_i) is the same as the dot of the two vectors
+        const cos_i = data.eye_vector.dot(data.normal_vector);
+        // find sin(theta_t)^2 via trig identity
+        const sin2_t = (n_ratio * n_ratio) * (1.0 - (cos_i * cos_i));
+
+        // check for total internal reflection. based on snell's law (page 157)
+        if (sin2_t > 1.0) return Color.init(0, 0, 0);
+
+        // find cos(theta_t) via trig identity
+        const cos_t = @sqrt(1.0 - sin2_t);
+
+        const refr_direction = data.normal_vector.scaled(n_ratio * cos_i - cos_t).minus(data.eye_vector.scaled(n_ratio));
+
+        const refr_ray = Ray.init(data.under_point, refr_direction);
+        const color = self.colorAt(refr_ray, alctr, refractions_remaining - 1);
+
+        // making sure to multiple by the transparency value to account for any opacity
+        return color.scaled(mate.transparency);
+    }
+
     pub fn colorAt(self: This, ray: Ray, alctr: std.mem.Allocator, reflections_remaining: usize) Color {
         var ixs = Intersections.init(alctr, .{});
         defer ixs.deinit();
@@ -168,8 +209,18 @@ pub const World = struct {
                 .sphere_idx => self.spheres_buf.items[hit.vptr.sphere_idx].normalAt(ray.position(hit.t)),
                 .plane_idx => self.planes_buf.items[hit.vptr.plane_idx].normalAt(ray.position(hit.t)),
             };
-            // TODO calculate n1, n2
-            const data = HitData.init(ray, hit, normal, 1, 1);
+
+            const bounds = ixs.findBoundaryObjects(hit);
+            const n1 = if (bounds.greater) |gtr|
+                self.getProperty(gtr, "material").refractive_index
+            else
+                1.0;
+            const n2 = if (bounds.lesser) |lsr|
+                self.getProperty(lsr, "material").refractive_index
+            else
+                1.0;
+
+            const data = HitData.init(ray, hit, normal, n1, n2);
             return self.shadeHit(data, alctr, reflections_remaining);
         } else {
             return Color.init(0, 0, 0);
@@ -352,6 +403,7 @@ test "Intersect a world with a ray" {
     errdefer std.debug.print("{any}\n", .{xs.ixs.items});
 
     try expect(xs.ixs.items.len == 4);
+    xs.order();
     try expect(xs.ixs.items[0].t == 4.0);
     try expect(xs.ixs.items[1].t == 4.5);
     try expect(xs.ixs.items[2].t == 5.5);
@@ -677,6 +729,218 @@ test "The reflected color at the maximum recursive depth" {
     try expect(color.equals(Color.init(0, 0, 0)));
 }
 
+test "The refracted color for a nonrefractive material" {
+    const alctr = std.testing.allocator;
+    var w = getTestWorld(alctr);
+    defer w.deinit();
+
+    const r = Ray.init(Point.init(0, 0, -5), Vector.init(0, 0, 1));
+    const i_1 = Intersection.init(4, VolumePtr{ .sphere_idx = 0 });
+    const i_2 = Intersection.init(6, VolumePtr{ .sphere_idx = 0 });
+
+    var xs = Intersections.init(alctr, .{ i_1, i_2 });
+    defer xs.deinit();
+
+    const bnds = xs.findBoundaryObjects(i_1);
+
+    const n1 = if (bnds.lesser) |lsr|
+        w.getProperty(lsr, "material").refractive_index
+    else
+        1.0;
+
+    const n2 = if (bnds.greater) |gtr|
+        w.getProperty(gtr, "material").refractive_index
+    else
+        1.0;
+
+    const data = HitData.init(
+        r,
+        i_1,
+        w.spheres_buf.items[0].normalAt(r.position(i_1.t)),
+        n1,
+        n2,
+    );
+
+    const color = w.refractedColor(data, alctr, 1);
+
+    try expect(color.equals(Color.init(0, 0, 0)));
+}
+
+test "The refracted color at max recursion" {
+    const alctr = std.testing.allocator;
+    var w = getTestWorld(alctr);
+    defer w.deinit();
+
+    prefab.toGlass(&w.spheres_buf.items[0].material);
+
+    const r = Ray.init(Point.init(0, 0, -5), Vector.init(0, 0, 1));
+    const i_1 = Intersection.init(4, VolumePtr{ .sphere_idx = 0 });
+    const i_2 = Intersection.init(6, VolumePtr{ .sphere_idx = 0 });
+
+    var xs = Intersections.init(alctr, .{ i_1, i_2 });
+    defer xs.deinit();
+
+    const bnds = xs.findBoundaryObjects(i_1);
+
+    const n1 = if (bnds.lesser) |lsr|
+        w.getProperty(lsr, "material").refractive_index
+    else
+        1.0;
+
+    const n2 = if (bnds.greater) |gtr|
+        w.getProperty(gtr, "material").refractive_index
+    else
+        1.0;
+
+    const data = HitData.init(
+        r,
+        i_1,
+        w.spheres_buf.items[0].normalAt(r.position(i_1.t)),
+        n1,
+        n2,
+    );
+
+    const color = w.refractedColor(data, alctr, 0);
+
+    try expect(color.equals(Color.init(0, 0, 0)));
+}
+
+test "The refracted color under total internal reflection" {
+    const alctr = std.testing.allocator;
+    var w = getTestWorld(alctr);
+    defer w.deinit();
+
+    prefab.toGlass(&w.spheres_buf.items[0].material);
+
+    const r = Ray.init(Point.init(0, 0, @sqrt(2.0) / 2.0), Vector.init(0, 1, 0));
+    const i_1 = Intersection.init(-@sqrt(2.0) / 2.0, VolumePtr{ .sphere_idx = 0 });
+    const i_2 = Intersection.init(@sqrt(2.0) / 2.0, VolumePtr{ .sphere_idx = 0 });
+
+    var xs = Intersections.init(alctr, .{ i_1, i_2 });
+    defer xs.deinit();
+
+    // Since we're inside of the sphere, we look at i_2, not i_1
+    const bnds = xs.findBoundaryObjects(i_2);
+
+    const n1 = if (bnds.lesser) |lsr|
+        w.getProperty(lsr, "material").refractive_index
+    else
+        1.0;
+
+    const n2 = if (bnds.greater) |gtr|
+        w.getProperty(gtr, "material").refractive_index
+    else
+        1.0;
+
+    const data = HitData.init(
+        r,
+        i_2, // i_2 here too
+        w.spheres_buf.items[0].normalAt(r.position(i_2.t)),
+        n1,
+        n2,
+    );
+
+    const color = w.refractedColor(data, alctr, 5);
+
+    try expect(color.equals(Color.init(0, 0, 0)));
+}
+
+test "The refracted color" {
+    const alctr = std.testing.allocator;
+    var w = getTestWorld(alctr);
+    defer w.deinit();
+
+    w.spheres_buf.items[0].material.ambient = 1;
+    w.spheres_buf.items[0].material.color_map = mat.TestColor.init();
+
+    prefab.toGlass(&w.spheres_buf.items[1].material);
+
+    const r = Ray.init(Point.init(0, 0, 0.1), Vector.init(0, 1, 0));
+
+    const i_1 = Intersection.init(-0.9899, VolumePtr{ .sphere_idx = 0 });
+    const i_2 = Intersection.init(-0.4899, VolumePtr{ .sphere_idx = 1 });
+    const i_3 = Intersection.init(0.4899, VolumePtr{ .sphere_idx = 1 });
+    const i_4 = Intersection.init(0.9899, VolumePtr{ .sphere_idx = 0 });
+
+    var xs = Intersections.init(alctr, .{ i_1, i_2, i_3, i_4 });
+    defer xs.deinit();
+
+    const bnds = xs.findBoundaryObjects(i_3);
+
+    const n1 = if (bnds.lesser) |lsr|
+        w.getProperty(lsr, "material").refractive_index
+    else
+        1.0;
+
+    const n2 = if (bnds.greater) |gtr|
+        w.getProperty(gtr, "material").refractive_index
+    else
+        1.0;
+
+    const data = HitData.init(
+        r,
+        i_3,
+        w.spheres_buf.items[1].normalAt(r.position(i_3.t)),
+        n1,
+        n2,
+    );
+
+    const color = w.refractedColor(data, alctr, 5);
+
+    // TODO book tests are imprecise
+    errdefer print(color);
+    try expect(color.equalsTolerance(Color.init(0, 0.99888, 0.04722), 100_000_000_000));
+}
+
+test "Shade hit handles refraction with a transparent material" {
+    const alctr = std.testing.allocator;
+    var w = getTestWorld(alctr);
+    defer w.deinit();
+
+    var flr = w.addVolume(vol.Plane);
+    flr.ptr.material.transparency = 0.5;
+    flr.ptr.material.refractive_index = 1.5;
+    flr.ptr.transform = trans.makeTranslation(0, -1, 0);
+
+    var ball = w.addVolume(vol.Sphere);
+    ball.ptr.material.color_map = mat.FlatColor.init(Color.init(1, 0, 0));
+    ball.ptr.material.ambient = 0.5;
+    ball.ptr.transform = trans.makeTranslation(0, -3.5, -0.5);
+
+    const r = Ray.init(Point.init(0, 0, -3), Vector.init(0, -@sqrt(2.0) / 2.0, @sqrt(2.0) / 2.0));
+
+    const i_1 = Intersection.init(@sqrt(2.0), VolumePtr{ .plane_idx = 0 });
+
+    var xs = Intersections.init(alctr, .{i_1});
+    defer xs.deinit();
+
+    const bnds = xs.findBoundaryObjects(i_1);
+
+    const n1 = if (bnds.lesser) |lsr|
+        w.getProperty(lsr, "material").refractive_index
+    else
+        1.0;
+
+    const n2 = if (bnds.greater) |gtr|
+        w.getProperty(gtr, "material").refractive_index
+    else
+        1.0;
+
+    const data = HitData.init(
+        r,
+        i_1,
+        w.planes_buf.items[0].normalAt(r.position(i_1.t)),
+        n1,
+        n2,
+    );
+
+    const color = w.shadeHit(data, alctr, 5);
+
+    // TODO book tests are imprecise
+    errdefer print(color);
+    try expect(color.equalsTolerance(Color.init(0.93643, 0.68643, 0.68643), 100_000_000_000));
+}
+
 test "getProperty" {
     const alctr = std.testing.allocator;
     var w = World.init(alctr);
@@ -694,6 +958,82 @@ test "getProperty" {
     try expect(w.getProperty(sphere.handle, "transform").t.equals(trans.makeTranslation(0, 10, 0).t));
     try expect(w.getProperty(plane.handle, "material").ambient == 0.25);
     try expect(w.getProperty(plane.handle, "transform").t.equals(trans.makeTranslation(0, -10, 0).t));
+}
+
+test "Finding entry and exit volumes at various intersections" {
+    const alctr = std.testing.allocator;
+    var w = World.init(alctr);
+    defer w.deinit();
+
+    // diagram on page 151
+    const s1 = blk: {
+        var s = w.addVolume(vol.Sphere);
+        prefab.toGlass(&s.ptr.material);
+        s.ptr.material.refractive_index = 1.5;
+        s.ptr.transform = trans.makeScaling(2, 2, 2);
+        break :blk s.handle;
+    };
+    const s2 = blk: {
+        var s = w.addVolume(vol.Sphere);
+        prefab.toGlass(&s.ptr.material);
+        s.ptr.material.refractive_index = 2.0;
+        s.ptr.transform = trans.makeTranslation(0, 0, -0.25);
+        break :blk s.handle;
+    };
+    const s3 = blk: {
+        var s = w.addVolume(vol.Sphere);
+        prefab.toGlass(&s.ptr.material);
+        s.ptr.material.refractive_index = 2.5;
+        s.ptr.transform = trans.makeTranslation(0, 0, 0.25);
+        break :blk s.handle;
+    };
+    var xs = Intersections.init(alctr, .{
+        Intersection.init(4.75, s2),
+        Intersection.init(5.25, s3),
+        Intersection.init(6, s1),
+        Intersection.init(2, s1),
+        Intersection.init(2.75, s2),
+        Intersection.init(3.25, s3),
+    });
+    defer xs.deinit();
+
+    {
+        const boundaries = xs.findBoundaryObjects(xs.ixs.items[0]);
+        errdefer print(boundaries);
+        try expect(boundaries.lesser == null);
+        try expect(boundaries.greater != null);
+        try expect(std.meta.eql(boundaries.greater.?, s1));
+    }
+    {
+        const boundaries = xs.findBoundaryObjects(xs.ixs.items[1]);
+        try expect(std.meta.eql(boundaries.lesser.?, s1));
+        try expect(std.meta.eql(boundaries.greater.?, s2));
+    }
+    {
+        const boundaries = xs.findBoundaryObjects(xs.ixs.items[2]);
+        try expect(std.meta.eql(boundaries.lesser.?, s2));
+        try expect(std.meta.eql(boundaries.greater.?, s3));
+    }
+    {
+        // note this result: we are passing through the edge of s2.
+        // however, before we reached this edge, we entered s3 (index 2 above).
+        // s3 completely surrounds this exit point on both inside and outside,
+        // so lesser and greater *both* are s3.
+        const boundaries = xs.findBoundaryObjects(xs.ixs.items[3]);
+        errdefer print(boundaries);
+        try expect(std.meta.eql(boundaries.lesser.?, s3));
+        try expect(std.meta.eql(boundaries.greater.?, s3));
+    }
+    {
+        const boundaries = xs.findBoundaryObjects(xs.ixs.items[4]);
+        try expect(std.meta.eql(boundaries.lesser.?, s3));
+        try expect(std.meta.eql(boundaries.greater.?, s1));
+    }
+    {
+        const boundaries = xs.findBoundaryObjects(xs.ixs.items[5]);
+        try expect(std.meta.eql(boundaries.lesser.?, s1));
+        try expect(boundaries.greater == null);
+    }
 }
 
 const Tuple = @import("tuple.zig").Tuple;
@@ -716,6 +1056,7 @@ const trans = @import("transform.zig");
 const rdr = @import("render.zig");
 const vol = @import("volume.zig");
 const mat = @import("material.zig");
+const prefab = @import("prefab.zig");
 
 const expect = std.testing.expect;
 const print = @import("u.zig").print;
