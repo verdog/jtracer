@@ -58,7 +58,7 @@ pub fn startRenderEngine(world: World, cam: Camera, qan: *Qanvas, alctr: std.mem
     var prog = prog_ctx.start("Pixels", qan.width * qan.height);
 
     // TODO base this size on cache size?
-    var chunks = getChunks(128, qan.*, alctr);
+    var chunks = getChunks(32, qan.*, alctr);
     defer alctr.free(chunks);
 
     var prng = std.rand.DefaultPrng.init(0);
@@ -76,7 +76,7 @@ pub fn startRenderEngine(world: World, cam: Camera, qan: *Qanvas, alctr: std.mem
     var threads_working_mem = threads_working_mem_buf[0..num_threads];
 
     for (threads_working_mem) |*slc| {
-        slc.* = alctr.alloc(u8, 1024 * 1024 * 512) catch unreachable;
+        slc.* = alctr.alloc(u8, 1024 * 1024 * 32) catch unreachable;
     }
 
     defer for (threads_working_mem) |slc| {
@@ -115,6 +115,7 @@ pub fn startRenderEngine(world: World, cam: Camera, qan: *Qanvas, alctr: std.mem
             if (mthread_i) |ti| {
                 // start thread
                 threads_idle[ti] = false;
+                threads_alctrs[ti].reset();
                 chunk.done = true;
                 var thr = std.Thread.spawn(.{}, render, .{
                     world,             cam,                            qan,

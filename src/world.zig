@@ -118,8 +118,6 @@ pub const World = struct {
             const vptr = VolumePtr{ .plane_idx = i };
             ixs.intersect(ptr.*, vptr, ray);
         }
-
-        ixs.order();
     }
 
     pub fn shadeHit(

@@ -23,7 +23,8 @@ const gpa = gpa_impl.allocator();
 pub fn main() !void {
     defer if (!gpa_impl.detectLeaks()) std.debug.print("(No leaks)\n", .{});
 
-    var qan = try Qanvas.init(gpa, 1200, 800);
+    const scale = 1;
+    var qan = try Qanvas.init(gpa, 1200 * scale, 800 * scale);
     defer qan.deinit();
 
     try sdl2.init(.{
@@ -97,7 +98,7 @@ pub fn main() !void {
                 trans.makeScaling(2, 2, 2),
             });
             sph.ptr.transform = sph.ptr.transform.chain(.{
-                trans.makeTranslation(-5, 1, 12),
+                trans.makeTranslation(-2, 1, 12),
             });
         }
         {
@@ -118,16 +119,17 @@ pub fn main() !void {
             });
         }
         {
-            // mirror sphere
+            // glass sphere
             var sph = world.addVolume(vol.Sphere);
             sph.ptr.material.color_map = mat.FlatColor.init(
                 Color.init(0.05, 0.05, 0.05),
             );
             sph.ptr.material.diffuse = 0.1;
-            sph.ptr.material.transparency = 0.9;
-            sph.ptr.material.refractive_index = 1.33;
+            sph.ptr.material.reflective = 1;
+            sph.ptr.material.transparency = 1;
+            sph.ptr.material.refractive_index = 1.52;
             sph.ptr.material.specular = 1;
-            sph.ptr.material.shininess = 300;
+            sph.ptr.material.shininess = 400;
             sph.ptr.transform = sph.ptr.transform.chain(.{
                 trans.makeTranslation(0, 2.4, 5),
                 trans.makeScaling(2.4, 2.4, 2.4),
@@ -143,10 +145,7 @@ pub fn main() !void {
             ));
             pln.ptr.material.specular = 0.1;
             pln.ptr.material.diffuse = 1;
-            // pln.ptr.material.reflective = 0.2;
-            pln.ptr.transform = pln.ptr.transform.chain(.{
-                trans.makeTranslation(0, 0, 0),
-            });
+            pln.ptr.material.reflective = 0.12;
         }
 
         var cam = Camera.init(
