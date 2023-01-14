@@ -197,6 +197,21 @@ pub const World = struct {
         return color.scaled(mate.transparency);
     }
 
+    fn getRefractiveIndicesFromBoundaries(self: This, bounds: Intersections.Boundary) struct {
+        n1: f64,
+        n2: f64,
+    } {
+        const n1 = if (bounds.lesser) |lsr|
+            self.getProperty(lsr, "material").refractive_index
+        else
+            1.0;
+        const n2 = if (bounds.greater) |gtr|
+            self.getProperty(gtr, "material").refractive_index
+        else
+            1.0;
+        return .{ .n1 = n1, .n2 = n2 };
+    }
+
     pub fn colorAt(self: This, ray: Ray, alctr: std.mem.Allocator, reflections_remaining: usize) Color {
         var ixs = Intersections.init(alctr, .{});
         defer ixs.deinit();
@@ -210,16 +225,8 @@ pub const World = struct {
             };
 
             const bounds = ixs.findBoundaryObjects(hit);
-            const n1 = if (bounds.lesser) |lsr|
-                self.getProperty(lsr, "material").refractive_index
-            else
-                1.0;
-            const n2 = if (bounds.greater) |gtr|
-                self.getProperty(gtr, "material").refractive_index
-            else
-                1.0;
-
-            const data = HitData.init(ray, hit, normal, n1, n2);
+            const indices = self.getRefractiveIndicesFromBoundaries(bounds);
+            const data = HitData.init(ray, hit, normal, indices.n1, indices.n2);
             return self.shadeHit(data, alctr, reflections_remaining);
         } else {
             return Color.init(0, 0, 0);

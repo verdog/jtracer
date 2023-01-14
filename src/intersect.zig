@@ -208,7 +208,7 @@ pub const Intersections = struct {
         return result;
     }
 
-    const Boundary = struct {
+    pub const Boundary = struct {
         // lesser has a smaller t value than greater
         lesser: ?VolPtr,
         greater: ?VolPtr,
