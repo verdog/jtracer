@@ -132,22 +132,23 @@ pub const World = struct {
         const mate = self.getProperty(data.intersection.vptr, "material");
 
         var color = Color.init(0, 0, 0);
-
         // surface color
         for (self.lights_buf.items) |l| {
             const in_shadow = self.isShadowed(data.over_point, l, alctr);
             color = color.plus(light.lighting(mate, tfm, l, data.point, data.eye_vector, data.normal_vector, in_shadow));
         }
-
         // reflected color
         var ref_color = self.reflectedColor(data, alctr, reflections_remaining);
-
-        var opaque_color = color.plus(ref_color);
-
         // refracted color
         var raf_color = self.refractedColor(data, alctr, reflections_remaining);
 
-        return opaque_color.plus(raf_color);
+        if (mate.reflective > 0 and mate.transparency > 0) {
+            // combine ref and raf with the schlick approx.
+            const reflectance = data.schlick();
+            return color.plus(ref_color.scaled(reflectance)).plus(raf_color.scaled(1 - reflectance));
+        } else {
+            return color.plus(ref_color).plus(raf_color);
+        }
     }
 
     pub fn reflectedColor(self: This, data: HitData, alctr: std.mem.Allocator, reflections_remaining: usize) Color {
@@ -194,7 +195,7 @@ pub const World = struct {
         const refr_ray = Ray.init(data.under_point, refr_direction);
         const color = self.colorAt(refr_ray, alctr, refractions_remaining - 1);
 
-        // making sure to multiple by the transparency value to account for any opacity
+        // making sure to multiply by the transparency value to account for any opacity
         return color.scaled(mate.transparency);
     }
 
@@ -211,12 +212,12 @@ pub const World = struct {
             };
 
             const bounds = ixs.findBoundaryObjects(hit);
-            const n1 = if (bounds.greater) |gtr|
-                self.getProperty(gtr, "material").refractive_index
+            const n1 = if (bounds.lesser) |lsr|
+                self.getProperty(lsr, "material").refractive_index
             else
                 1.0;
-            const n2 = if (bounds.lesser) |lsr|
-                self.getProperty(lsr, "material").refractive_index
+            const n2 = if (bounds.greater) |gtr|
+                self.getProperty(gtr, "material").refractive_index
             else
                 1.0;
 
@@ -941,6 +942,56 @@ test "Shade hit handles refraction with a transparent material" {
     try expect(color.equalsTolerance(Color.init(0.93643, 0.68643, 0.68643), 100_000_000_000));
 }
 
+test "Shade hit handles a reflective and refractive surface and takes reflectance into account" {
+    const alctr = std.testing.allocator;
+    var w = getTestWorld(alctr);
+    defer w.deinit();
+
+    var flr = w.addVolume(vol.Plane);
+    flr.ptr.material.transparency = 0.5;
+    flr.ptr.material.refractive_index = 1.5;
+    flr.ptr.material.reflective = 0.5;
+    flr.ptr.transform = trans.makeTranslation(0, -1, 0);
+
+    var ball = w.addVolume(vol.Sphere);
+    ball.ptr.material.color_map = mat.FlatColor.init(Color.init(1, 0, 0));
+    ball.ptr.material.ambient = 0.5;
+    ball.ptr.transform = trans.makeTranslation(0, -3.5, -0.5);
+
+    const r = Ray.init(Point.init(0, 0, -3), Vector.init(0, -@sqrt(2.0) / 2.0, @sqrt(2.0) / 2.0));
+
+    const i_1 = Intersection.init(@sqrt(2.0), VolumePtr{ .plane_idx = 0 });
+
+    var xs = Intersections.init(alctr, .{i_1});
+    defer xs.deinit();
+
+    const bnds = xs.findBoundaryObjects(i_1);
+
+    const n1 = if (bnds.lesser) |lsr|
+        w.getProperty(lsr, "material").refractive_index
+    else
+        1.0;
+
+    const n2 = if (bnds.greater) |gtr|
+        w.getProperty(gtr, "material").refractive_index
+    else
+        1.0;
+
+    const data = HitData.init(
+        r,
+        i_1,
+        w.planes_buf.items[0].normalAt(r.position(i_1.t)),
+        n1,
+        n2,
+    );
+
+    const color = w.shadeHit(data, alctr, 5);
+
+    // TODO book tests are imprecise
+    errdefer print(color);
+    try expect(color.equalsTolerance(Color.init(0.93392, 0.69643, 0.69243), 100_000_000_000));
+}
+
 test "getProperty" {
     const alctr = std.testing.allocator;
     var w = World.init(alctr);
@@ -1008,6 +1059,11 @@ test "Finding entry and exit volumes at various intersections" {
         const boundaries = xs.findBoundaryObjects(xs.ixs.items[1]);
         try expect(std.meta.eql(boundaries.lesser.?, s1));
         try expect(std.meta.eql(boundaries.greater.?, s2));
+
+        const n1 = w.getProperty(boundaries.lesser.?, "material").refractive_index;
+        const n2 = w.getProperty(boundaries.greater.?, "material").refractive_index;
+        try expect(n1 == 1.5);
+        try expect(n2 == 2.0);
     }
     {
         const boundaries = xs.findBoundaryObjects(xs.ixs.items[2]);

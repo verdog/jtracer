@@ -21,7 +21,7 @@ pub const HitData = struct {
     reflect_vector: Tuple,
     /// true if the normal vector points towards the inside of the shape
     inside: bool,
-    /// index of refraction of the material that the hit is exiting
+    /// index of refraction of the material that the hit is exiting n1: f64,
     n1: f64,
     /// index of refraction of the material that the hit is entering
     n2: f64,
@@ -29,12 +29,31 @@ pub const HitData = struct {
     pub fn init(r: Ray, x: Intersection, normal: Tuple, n1: f64, n2: f64) This {
         const point = r.position(x.t);
         var normal_vector = normal;
-        const eye_vector = r.direction.scaled(-1);
+        const eye_vector = r.direction.scaled(-1).normalized();
         const inside = eye_vector.dot(normal_vector) < 0;
         if (inside) normal_vector = normal_vector.scaled(-1);
         const over_point = point.plus(normal_vector.scaled(32 * mymath.floatTolerance));
         const under_point = point.plus(normal_vector.scaled(-32 * mymath.floatTolerance));
-        const reflect_vector = r.direction.reflected(normal_vector);
+        const reflect_vector = r.direction.normalized().reflected(normal_vector);
+
+        std.debug.assert(std.math.approxEqRel(
+            f64,
+            normal_vector.magnitude(),
+            1.0,
+            mymath.floatTolerance,
+        ));
+        std.debug.assert(std.math.approxEqRel(
+            f64,
+            eye_vector.magnitude(),
+            1.0,
+            mymath.floatTolerance,
+        ));
+        std.debug.assert(std.math.approxEqRel(
+            f64,
+            reflect_vector.magnitude(),
+            1.0,
+            mymath.floatTolerance,
+        ));
 
         return .{
             .intersection = x,
@@ -48,6 +67,29 @@ pub const HitData = struct {
             .n1 = n1,
             .n2 = n2,
         };
+    }
+
+    pub fn schlick(self: This) f64 {
+        // schlick approximation to determine total internal reflection
+
+        // find the cosine of the angle btween the eye and normal
+        var cos = self.eye_vector.dot(self.normal_vector);
+
+        // total internal reflection can only occur if n1 > n2
+        if (self.n1 > self.n2) {
+            // TODO is infinity ok here?
+            const ratio = self.n1 / self.n2;
+            const sin2_t = ratio * ratio * (1.0 - cos * cos);
+            if (sin2_t > 1.0) return 1;
+
+            // compute cosine of theta_t using trig identity.
+            // when n1 > n2, use cos(theta_t) instead of cos(eye dot normal)
+            cos = @sqrt(1.0 - sin2_t);
+        }
+
+        const inner = (self.n1 - self.n2) / (self.n1 + self.n2);
+        const r0 = inner * inner;
+        return r0 + (1 - r0) * std.math.pow(f64, 1 - cos, 5);
     }
 
     const This = @This();
@@ -551,6 +593,54 @@ test "Precomputing the reflection vector" {
     const data = HitData.init(r, i, pl.normalAt(r.position(i.t)), 1, 1);
 
     try expect(data.reflect_vector.equals(Vector.init(0, @sqrt(2.0) / 2.0, @sqrt(2.0) / 2.0)));
+}
+
+test "The Schlick approx. under total internal reflection" {
+    const alctr = std.testing.allocator;
+
+    var sh = vol.Sphere.init();
+    prefab.toGlass(&sh.material);
+    const r = Ray.initC(0, 0, @sqrt(2.0) / 2.0, 0, 1, 0);
+    const xs = Intersections.init(alctr, .{
+        Intersection.init(-@sqrt(2.0) / 2.0, VolPtr{ .sphere_idx = 0 }),
+        Intersection.init(@sqrt(2.0) / 2.0, VolPtr{ .sphere_idx = 0 }),
+    });
+    defer xs.deinit();
+    const data = HitData.init(r, xs.ixs.items[1], sh.normalAt(r.position(xs.ixs.items[1].t)), 1.5, 1);
+
+    try expect(data.schlick() == 1.0);
+}
+
+test "The Schlick approx. with a perpendicular viewing angle" {
+    const alctr = std.testing.allocator;
+
+    var sh = vol.Sphere.init();
+    prefab.toGlass(&sh.material);
+    const r = Ray.initC(0, 0, 0, 0, 1, 0);
+    const xs = Intersections.init(alctr, .{
+        Intersection.init(-1, VolPtr{ .sphere_idx = 0 }),
+        Intersection.init(1, VolPtr{ .sphere_idx = 0 }),
+    });
+    defer xs.deinit();
+    const data = HitData.init(r, xs.ixs.items[1], sh.normalAt(r.position(xs.ixs.items[1].t)), 1.5, 1);
+
+    try expect(std.math.approxEqAbs(f64, data.schlick(), 0.04, mymath.floatTolerance));
+}
+
+test "The Schlick approx. with a small angle and n2 > n1" {
+    const alctr = std.testing.allocator;
+
+    var sh = vol.Sphere.init();
+    prefab.toGlass(&sh.material);
+    const r = Ray.initC(0, 0.99, -2, 0, 0, 1);
+    const xs = Intersections.init(alctr, .{
+        Intersection.init(1.8589, VolPtr{ .sphere_idx = 0 }),
+    });
+    defer xs.deinit();
+    const data = HitData.init(r, xs.ixs.items[0], sh.normalAt(r.position(xs.ixs.items[0].t)), 1, 1.5);
+
+    errdefer std.debug.print("{}\n", .{data.schlick()});
+    try expect(std.math.approxEqRel(f64, data.schlick(), 0.48873081012212, mymath.floatTolerance));
 }
 
 const std = @import("std");

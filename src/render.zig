@@ -76,7 +76,7 @@ pub fn startRenderEngine(world: World, cam: Camera, qan: *Qanvas, alctr: std.mem
     var threads_working_mem = threads_working_mem_buf[0..num_threads];
 
     for (threads_working_mem) |*slc| {
-        slc.* = alctr.alloc(u8, 1024 * 1024 * 256) catch unreachable;
+        slc.* = alctr.alloc(u8, 1024 * 1024 * 512) catch unreachable;
     }
 
     defer for (threads_working_mem) |slc| {
@@ -183,8 +183,8 @@ fn render(
     while (pix_y < end_y) : (pix_y += 1) {
         var pix_x: i64 = start_x;
         while (pix_x < end_x) : (pix_x += 1) {
-            // 8 reflections
-            qan.write(world.colorAt(cam.rayForPixel(pix_x, pix_y), alctr, 8), pix_x, pix_y);
+            // 5 reflections
+            qan.write(world.colorAt(cam.rayForPixel(pix_x, pix_y), alctr, 5), pix_x, pix_y);
             prog.completeOne();
         }
     }
