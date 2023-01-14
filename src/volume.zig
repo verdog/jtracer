@@ -54,6 +54,62 @@ pub const Plane = struct {
     const This = @This();
 };
 
+pub const Cube = struct {
+    transform: trans.Transform,
+    material: Material,
+
+    pub fn init() This {
+        return .{
+            .transform = trans.Transform{},
+            .material = Material.init(),
+        };
+    }
+
+    pub fn normalAt(self: This, world_space_point: Tuple) Tuple {
+        // object space
+        const point = self.transform.inverse.mult(world_space_point);
+
+        const obj_space_normal = blk: {
+            // cubes' normals are always the same for a given face. so finding the normal on a
+            // cube reduces to finding the face that the point is on. there are two patterns
+            // we can exploit:
+            //   1. a point on the cube will always have a component with either 1.0 or -1.0
+            //   2. the 1.0 (or -1.0) will always be the greatest (or smallest) of all the components.
+            // e.g.
+            //   (-1.0, 0.3, -0.5) => -x
+            //   (0.3, -0.9, 1.0) => +z
+            //   (-0.6, 1.0, 0.7) => +y
+            //   (0.4, -1.0, 0.2) => -y
+            // because of floating point rounding, we can't assume the component will exactly
+            // equal one, so we use the second pattern in practice. for corners, we return the
+            // normal from the +-x face.
+
+            const max_component = std.math.max3(
+                @fabs(point.x()),
+                @fabs(point.y()),
+                @fabs(point.z()),
+            );
+
+            if (max_component == @fabs(point.x()))
+                break :blk Vector.init(point.x(), 0, 0);
+            if (max_component == @fabs(point.y()))
+                break :blk Vector.init(0, point.y(), 0);
+            // then assume max_component == @fabs(point.z())
+            break :blk Vector.init(0, 0, point.z());
+        };
+
+        var world_space_normal = self.transform.inverse.transposed().mult(obj_space_normal);
+        // hack: technically we should multiply by submatrix(self.transform, 3, 3), to avoid
+        //       messing up the w component of the resulting vector. we can get away with
+        //       the above as long as we set the w component back to 0 manually
+        world_space_normal.vec[3] = 0;
+
+        return world_space_normal.normalized();
+    }
+
+    const This = @This();
+};
+
 test "The normal of a plane is constant everywhere" {
     const p = Plane.init();
 
@@ -111,6 +167,48 @@ test "The normal of a rotated plane is constant everywhere" {
     try expect(n.equals(n1));
     try expect(n.equals(n2));
     try expect(n.equals(n3));
+}
+
+test "The normal on a cube" {
+    const tst = struct {
+        fn t(p: Tuple, expected_n: Tuple) !void {
+            const c = Cube.init();
+            const n = c.normalAt(p);
+            errdefer {
+                print(n);
+                print(expected_n);
+            }
+            try expect(n.equals(expected_n));
+        }
+    }.t;
+
+    try tst(Point.init(1, 0.5, -0.8), Vector.init(1, 0, 0));
+    try tst(Point.init(-1, -0.2, 0.9), Vector.init(-1, 0, 0));
+    try tst(Point.init(-0.4, 1, -0.1), Vector.init(0, 1, 0));
+    try tst(Point.init(0.3, -1, -0.7), Vector.init(0, -1, 0));
+    try tst(Point.init(-0.6, 0.3, 1), Vector.init(0, 0, 1));
+    try tst(Point.init(0.4, 0.4, -1), Vector.init(0, 0, -1));
+    try tst(Point.init(1, 1, 1), Vector.init(1, 0, 0)); // corners assume x face
+    try tst(Point.init(-1, -1, -1), Vector.init(-1, 0, 0)); // corners assume x face
+}
+
+test "The normal on a scaled cube" {
+    const tst = struct {
+        fn t(p: Tuple, expected_n: Tuple) !void {
+            var c = Cube.init();
+            c.transform = c.transform.mult(trans.makeScaling(0.5, 1, 0.5));
+            const n = c.normalAt(p);
+            errdefer {
+                print(n);
+                print(expected_n);
+            }
+            try expect(n.equals(expected_n));
+        }
+    }.t;
+
+    try tst(Point.init(0.5, 0.3, -0.2), Vector.init(1, 0, 0));
+    try tst(Point.init(0.24, -1, 0.09), Vector.init(0, -1, 0));
+    try tst(Point.init(-0.4, 0.3, 0.5), Vector.init(0, 0, 1));
 }
 
 test "Spheres have unique ids" {

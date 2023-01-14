@@ -162,9 +162,19 @@ pub const ThreeDCheckedColor = struct {
     }
 
     pub fn at(self: This, point: Tuple) Color {
-        const x = std.math.floor(point.x());
-        const y = std.math.floor(point.y() + mymath.floatTolerance);
-        const z = std.math.floor(point.z());
+        // we offset the coords a little to fight acne in the common case of a flat object
+        // like a cube or plane using this material. in those cases the seams are right on
+        // the boundaries.
+        const sign = struct {
+            fn f(fl: f64) f64 {
+                if (std.math.approxEqAbs(f64, fl, 0, mymath.floatTolerance)) return 1;
+                return std.math.sign(fl);
+            }
+        }.f;
+        const nudge = 2;
+        const x = std.math.floor(point.x() + sign(point.x()) * nudge * mymath.floatTolerance);
+        const y = std.math.floor(point.y() + sign(point.y()) * nudge * mymath.floatTolerance);
+        const z = std.math.floor(point.z() + sign(point.z()) * nudge * mymath.floatTolerance);
         return if (@mod(x + y + z, 2) == 0) self.a else self.b;
     }
 

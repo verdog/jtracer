@@ -149,6 +149,10 @@ pub const Intersections = struct {
                 std.debug.assert(std.meta.activeTag(vptr) == .plane_idx);
                 self.intersectPlane(vptr, volu, ray);
             },
+            vol.Cube => {
+                std.debug.assert(std.meta.activeTag(vptr) == .cube_idx);
+                self.intersectCube(vptr, volu, ray);
+            },
             else => unreachable,
         }
     }
@@ -178,6 +182,35 @@ pub const Intersections = struct {
         }
 
         self.ixs.append(Intersection.init(-td_ray.origin.y() / td_ray.direction.y(), vptr)) catch @panic("OOM");
+    }
+
+    fn checkCubeAxis(origin: f64, direction: f64) struct { tmin: f64, tmax: f64 } {
+        const tmin_numerator = -1 - origin;
+        const tmax_numerator = 1 - origin;
+
+        // TODO: careful about dividing by zero here
+        var tmin = tmin_numerator / direction;
+        var tmax = tmax_numerator / direction;
+
+        if (tmin > tmax) std.mem.swap(f64, &tmin, &tmax);
+
+        return .{ .tmin = tmin, .tmax = tmax };
+    }
+
+    fn intersectCube(self: *This, vptr: VolPtr, cube: vol.Cube, ray: Ray) void {
+        const td_ray = ray.transformed(cube.transform.inverse);
+
+        const x_axis = checkCubeAxis(td_ray.origin.x(), td_ray.direction.x());
+        const y_axis = checkCubeAxis(td_ray.origin.y(), td_ray.direction.y());
+        const z_axis = checkCubeAxis(td_ray.origin.z(), td_ray.direction.z());
+
+        const tmin = std.math.max3(x_axis.tmin, y_axis.tmin, z_axis.tmin);
+        const tmax = std.math.min3(x_axis.tmax, y_axis.tmax, z_axis.tmax);
+
+        if (tmin > tmax) return; // no hit
+
+        self.ixs.append(Intersection.init(tmin, vptr)) catch @panic("OOM");
+        self.ixs.append(Intersection.init(tmax, vptr)) catch @panic("OOM");
     }
 
     pub fn clear(self: *This) void {
@@ -641,6 +674,62 @@ test "The Schlick approx. with a small angle and n2 > n1" {
 
     errdefer std.debug.print("{}\n", .{data.schlick()});
     try expect(std.math.approxEqRel(f64, data.schlick(), 0.48873081012212, mymath.floatTolerance));
+}
+
+test "A ray intersects a cube" {
+    const tst = struct {
+        fn t(ray: Ray, expected_t0: f64, expected_t1: f64) !void {
+            const c = vol.Cube.init();
+            const cptr = VolPtr{ .cube_idx = 0 };
+            var xs = Intersections.init(std.testing.allocator, .{});
+            defer xs.deinit();
+
+            xs.intersect(c, cptr, ray);
+            try expect(xs.ixs.items.len == 2);
+            try expect(xs.ixs.items[0].t == expected_t0);
+            try expect(std.meta.eql(xs.ixs.items[0].vptr, cptr));
+            try expect(xs.ixs.items[1].t == expected_t1);
+            try expect(std.meta.eql(xs.ixs.items[1].vptr, cptr));
+        }
+    }.t;
+
+    try tst(Ray.initC(5, 0.5, 0, -1, 0, 0), 4, 6); // +x
+    try tst(Ray.initC(-5, 0.5, 0, 1, 0, 0), 4, 6); // -x
+    try tst(Ray.initC(0.5, 5, 0, 0, -1, 0), 4, 6); // +y
+    try tst(Ray.initC(0.5, -5, 0, 0, 1, 0), 4, 6); // -y
+    try tst(Ray.initC(0.5, 0, 5, 0, 0, -1), 4, 6); // +z
+    try tst(Ray.initC(0.5, 0, -5, 0, 0, 1), 4, 6); // -z
+    try tst(Ray.initC(0, 0.5, 0, 0, 0, 1), -1, 1); // inside the cube
+}
+
+test "A ray misses a cube" {
+    const tst = struct {
+        fn t(ray: Ray) !void {
+            const c = vol.Cube.init();
+            const cptr = VolPtr{ .cube_idx = 0 };
+            var xs = Intersections.init(std.testing.allocator, .{});
+            defer xs.deinit();
+
+            xs.intersect(c, cptr, ray);
+            try expect(xs.ixs.items.len == 0);
+        }
+    }.t;
+
+    try tst(Ray.init(
+        Point.init(-2, 0, 0),
+        Vector.init(0.2673, 0.5345, 0.8018).normalized(),
+    )); // diagonal
+    try tst(Ray.init(
+        Point.init(0, -2, 0),
+        Vector.init(0.8018, 0.2673, 0.5345).normalized(),
+    )); // diagonal
+    try tst(Ray.init(
+        Point.init(0, 0, -2),
+        Vector.init(0.5345, 0.8018, 0.2673).normalized(),
+    )); // diagonal
+    try tst(Ray.initC(2, 0, 2, 0, 0, -1)); // parallel
+    try tst(Ray.initC(0, 2, 2, 0, -1, 0)); // parallel
+    try tst(Ray.initC(2, 2, 0, -1, 0, 0)); // parallel
 }
 
 const std = @import("std");

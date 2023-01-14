@@ -65,76 +65,170 @@ pub fn main() !void {
         defer world.deinit();
 
         var lgt = world.addLight(PointLight);
-        lgt.ptr.position = Point.init(-10, 10, -10);
+        lgt.ptr.position = Point.init(-4, 10, -3);
         lgt.ptr.intensity = Color.init(1, 1, 1);
 
+        // {
+        //     // striped sphere
+        //     var sph = world.addVolume(vol.Sphere);
+        //     sph.ptr.material.color_map = mat.StripeColor.initSingle(Color.init(0.1, 1, 0.5));
+        //     sph.ptr.material.diffuse = 0.7;
+        //     sph.ptr.material.specular = 0.3;
+        //     sph.ptr.material.transform = sph.ptr.material.transform.chain(.{
+        //         trans.makeScaling(0.25, 0.25, 0.25),
+        //         trans.makeRotationZ(-std.math.pi / 4.0),
+        //         trans.makeTranslation(0, 0, 0),
+        //     });
+        //     sph.ptr.transform = sph.ptr.transform.chain(.{
+        //         trans.makeTranslation(-2.5, 1, 0),
+        //         trans.makeRotationY(std.math.pi / 4.0),
+        //     });
+        // }
+        // {
+        //     // gradient sphere
+        //     var sph = world.addVolume(vol.Sphere);
+        //     sph.ptr.material.color_map = mat.GradientColor.init(
+        //         Color.init(0.8, 0.2, 0.2),
+        //         Color.init(0.2, 0.2, 0.8),
+        //     );
+        //     sph.ptr.material.diffuse = 0.7;
+        //     sph.ptr.material.specular = 0.3;
+        //     sph.ptr.material.transform = sph.ptr.material.transform.chain(.{
+        //         trans.makeTranslation(1, 0, 5),
+        //         trans.makeScaling(2, 2, 2),
+        //     });
+        //     sph.ptr.transform = sph.ptr.transform.chain(.{
+        //         trans.makeTranslation(-2, 1, 12),
+        //     });
+        // }
+        // {
+        //     // ring sphere
+        //     var sph = world.addVolume(vol.Sphere);
+        //     sph.ptr.material.color_map = mat.RingColor.init(
+        //         Color.init(0.7, 0.6, 0.1),
+        //         Color.init(0.1, 0.4, 0.6),
+        //     );
+        //     sph.ptr.material.diffuse = 0.7;
+        //     sph.ptr.material.specular = 0.3;
+        //     sph.ptr.material.transform = sph.ptr.material.transform.chain(.{
+        //         trans.makeTranslation(-0.5, 0, 0),
+        //         trans.makeScaling(0.20, 0.20, 0.20),
+        //     });
+        //     sph.ptr.transform = sph.ptr.transform.chain(.{
+        //         trans.makeTranslation(2.5, 1, 0),
+        //     });
+        // }
+        // {
+        // // glass sphere
+        // var sph = world.addVolume(vol.Sphere);
+        // sph.ptr.material.color_map = mat.FlatColor.init(
+        //     Color.init(0.05, 0.05, 0.05),
+        // );
+        // sph.ptr.material.diffuse = 0.1;
+        // sph.ptr.material.reflective = 1;
+        // sph.ptr.material.transparency = 1;
+        // sph.ptr.material.refractive_index = 1.52;
+        // sph.ptr.material.specular = 1;
+        // sph.ptr.material.shininess = 400;
+        // sph.ptr.transform = sph.ptr.transform.chain(.{
+        //     trans.makeTranslation(0, 1, 5),
+        // });
+        // }
         {
-            // striped sphere
-            var sph = world.addVolume(vol.Sphere);
-            sph.ptr.material.color_map = mat.StripeColor.initSingle(Color.init(0.1, 1, 0.5));
-            sph.ptr.material.diffuse = 0.7;
-            sph.ptr.material.specular = 0.3;
-            sph.ptr.material.transform = sph.ptr.material.transform.chain(.{
-                trans.makeScaling(0.25, 0.25, 0.25),
-                trans.makeRotationZ(-std.math.pi / 4.0),
-                trans.makeTranslation(0, 0, 0),
-            });
-            sph.ptr.transform = sph.ptr.transform.chain(.{
-                trans.makeTranslation(-2.5, 1, 0),
-                trans.makeRotationY(std.math.pi / 4.0),
-            });
-        }
-        {
-            // gradient sphere
-            var sph = world.addVolume(vol.Sphere);
-            sph.ptr.material.color_map = mat.GradientColor.init(
-                Color.init(0.8, 0.2, 0.2),
-                Color.init(0.2, 0.2, 0.8),
+            // checkered cube
+            var cube = world.addVolume(vol.Cube);
+            cube.ptr.material.color_map = mat.ThreeDCheckedColor.init(
+                Color.init(0.6, 0.2, 0.2),
+                Color.init(0.2, 0.2, 0.6),
             );
-            sph.ptr.material.diffuse = 0.7;
-            sph.ptr.material.specular = 0.3;
-            sph.ptr.material.transform = sph.ptr.material.transform.chain(.{
-                trans.makeTranslation(1, 0, 5),
-                trans.makeScaling(2, 2, 2),
-            });
-            sph.ptr.transform = sph.ptr.transform.chain(.{
-                trans.makeTranslation(-2, 1, 12),
+
+            cube.ptr.transform = cube.ptr.transform.chain(.{
+                trans.makeTranslation(3, 2, 0),
+                trans.makeScaling(0.7, 2, 0.7),
+                trans.makeRotationY(std.math.pi / -12.0),
             });
         }
         {
-            // ring sphere
-            var sph = world.addVolume(vol.Sphere);
-            sph.ptr.material.color_map = mat.RingColor.init(
-                Color.init(0.7, 0.6, 0.1),
-                Color.init(0.1, 0.4, 0.6),
+            // checkered cube
+            var cube = world.addVolume(vol.Cube);
+            cube.ptr.material.color_map = mat.FlatColor.init(
+                Color.init(0.2, 0.2, 0.2),
             );
-            sph.ptr.material.diffuse = 0.7;
-            sph.ptr.material.specular = 0.3;
-            sph.ptr.material.transform = sph.ptr.material.transform.chain(.{
-                trans.makeTranslation(-0.5, 0, 0),
-                trans.makeScaling(0.20, 0.20, 0.20),
-            });
-            sph.ptr.transform = sph.ptr.transform.chain(.{
-                trans.makeTranslation(2.5, 1, 0),
+            cube.ptr.material.diffuse = 0.2;
+            cube.ptr.material.ambient = 0.1;
+            cube.ptr.material.reflective = 0.9;
+            cube.ptr.material.transparency = 0.9;
+            cube.ptr.material.refractive_index = 1.52;
+
+            cube.ptr.transform = cube.ptr.transform.chain(.{
+                trans.makeTranslation(0, 0.7001, -3),
+                trans.makeRotationY(0.3),
+                trans.makeRotationX(std.math.pi / 2.0),
+                trans.makeScaling(3, 0.1, 0.7),
             });
         }
         {
-            // glass sphere
-            var sph = world.addVolume(vol.Sphere);
-            sph.ptr.material.color_map = mat.FlatColor.init(
-                Color.init(0.05, 0.05, 0.05),
+            // checkered cube
+            var cube = world.addVolume(vol.Cube);
+            cube.ptr.material.color_map = mat.ThreeDCheckedColor.init(
+                Color.init(0.6, 0.2, 0.2),
+                Color.init(0.2, 0.2, 0.6),
             );
-            sph.ptr.material.diffuse = 0.1;
-            sph.ptr.material.reflective = 1;
-            sph.ptr.material.transparency = 1;
-            sph.ptr.material.refractive_index = 1.52;
-            sph.ptr.material.specular = 1;
-            sph.ptr.material.shininess = 400;
-            sph.ptr.transform = sph.ptr.transform.chain(.{
-                trans.makeTranslation(0, 2.4, 5),
-                trans.makeScaling(2.4, 2.4, 2.4),
+            cube.ptr.material.diffuse = 0.1;
+            cube.ptr.material.ambient = 0;
+            cube.ptr.material.reflective = 1;
+
+            cube.ptr.transform = cube.ptr.transform.chain(.{
+                trans.makeTranslation(0, 1, 0),
+                trans.makeRotationY(std.math.pi / 4.0 + 0.2),
             });
         }
+        {
+            var sph = world.addVolume(vol.Sphere);
+            sph.ptr.material.color_map = mat.FlatColor.init(Color.init(0.2, 0.2, 0.7));
+
+            sph.ptr.transform = sph.ptr.transform.chain(.{
+                trans.makeTranslation(0, 3, 0),
+            });
+        }
+        {
+            var sph = world.addVolume(vol.Sphere);
+            sph.ptr.material.color_map = mat.FlatColor.init(Color.init(0.2, 0.2, 0.7));
+
+            sph.ptr.transform = sph.ptr.transform.chain(.{
+                trans.makeTranslation(3, 1, -2.5),
+            });
+        }
+        {
+            // checkered cube
+            var cube = world.addVolume(vol.Cube);
+            cube.ptr.material.color_map = mat.ThreeDCheckedColor.init(
+                Color.init(0.6, 0.2, 0.2),
+                Color.init(0.2, 0.2, 0.6),
+            );
+
+            cube.ptr.transform = cube.ptr.transform.chain(.{
+                trans.makeTranslation(-3, 0.7, 0),
+                trans.makeScaling(1.2, 0.7, 1.2),
+                // trans.makeRotationY(std.math.pi / -12.0),
+            });
+        }
+
+        {
+            // checkered cube
+            var cube = world.addVolume(vol.Cube);
+            cube.ptr.material.color_map = mat.RingColor.init(
+                Color.init(0.6, 0.2, 0.2),
+                Color.init(0.2, 0.2, 0.6),
+            );
+
+            cube.ptr.transform = cube.ptr.transform.chain(.{
+                trans.makeTranslation(-3.3, 1.7, 0.3),
+                trans.makeRotationY(42),
+                trans.makeScaling(0.3, 0.3, 0.3),
+            });
+        }
+
         {
             // checkered floor
             var pln = world.addVolume(vol.Plane);
@@ -155,7 +249,7 @@ pub fn main() !void {
         );
 
         // slightly down
-        const from = Point.init(0, 3.3, -6);
+        const from = Point.init(0, 3.3, -10);
         const to = Point.init(0, 2, 0);
         const up = Vector.init(0, 1, 0);
 

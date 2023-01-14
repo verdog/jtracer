@@ -7,6 +7,7 @@ pub const World = struct {
         return .{
             .spheres_buf = std.ArrayList(vol.Sphere).init(alctr),
             .planes_buf = std.ArrayList(vol.Plane).init(alctr),
+            .cubes_buf = std.ArrayList(vol.Cube).init(alctr),
             .lights_buf = std.ArrayList(PointLight).init(alctr),
         };
     }
@@ -14,6 +15,7 @@ pub const World = struct {
     pub fn deinit(self: This) void {
         self.spheres_buf.deinit();
         self.planes_buf.deinit();
+        self.cubes_buf.deinit();
         self.lights_buf.deinit();
     }
 
@@ -33,6 +35,14 @@ pub const World = struct {
                 return .{
                     .handle = VolumePtr{ .plane_idx = last },
                     .ptr = &self.planes_buf.items[last],
+                };
+            },
+            vol.Cube => {
+                self.cubes_buf.append(vol.Cube.init()) catch unreachable;
+                const last = self.cubes_buf.items.len - 1;
+                return .{
+                    .handle = VolumePtr{ .cube_idx = last },
+                    .ptr = &self.cubes_buf.items[last],
                 };
             },
             else => unreachable,
@@ -59,6 +69,7 @@ pub const World = struct {
         return switch (std.meta.activeTag(vptr)) {
             .sphere_idx => return &self.spheres_buf.items[vptr.sphere_idx],
             .plane_idx => return &self.planes_buf.items[vptr.plane_idx],
+            .cube_idx => return &self.cubes_buf.items[vptr.cube_idx],
         };
     }
 
@@ -69,6 +80,7 @@ pub const World = struct {
         };
     }
 
+    /// Assumes that vol.Sphere defines what fields are available
     fn PropertyT(comptime name: []const u8) type {
         const fs = @typeInfo(vol.Sphere).Struct.fields;
         for (fs) |fd| {
@@ -88,6 +100,7 @@ pub const World = struct {
         return switch (std.meta.activeTag(volp)) {
             .sphere_idx => return @field(self.spheres_buf.items[volp.sphere_idx], property),
             .plane_idx => return @field(self.planes_buf.items[volp.plane_idx], property),
+            .cube_idx => return @field(self.cubes_buf.items[volp.cube_idx], property),
         };
     }
 
@@ -116,6 +129,11 @@ pub const World = struct {
 
         for (self.planes_buf.items) |*ptr, i| {
             const vptr = VolumePtr{ .plane_idx = i };
+            ixs.intersect(ptr.*, vptr, ray);
+        }
+
+        for (self.cubes_buf.items) |*ptr, i| {
+            const vptr = VolumePtr{ .cube_idx = i };
             ixs.intersect(ptr.*, vptr, ray);
         }
     }
@@ -222,6 +240,7 @@ pub const World = struct {
             const normal = switch (std.meta.activeTag(hit.vptr)) {
                 .sphere_idx => self.spheres_buf.items[hit.vptr.sphere_idx].normalAt(ray.position(hit.t)),
                 .plane_idx => self.planes_buf.items[hit.vptr.plane_idx].normalAt(ray.position(hit.t)),
+                .cube_idx => self.cubes_buf.items[hit.vptr.cube_idx].normalAt(ray.position(hit.t)),
             };
 
             const bounds = ixs.findBoundaryObjects(hit);
@@ -238,7 +257,7 @@ pub const World = struct {
     }
 
     pub fn numVolumes(self: This) usize {
-        return self.spheres_buf.items.len + self.planes_buf.items.len;
+        return self.spheres_buf.items.len + self.planes_buf.items.len + self.cubes_buf.items.len;
     }
 
     pub fn numLights(self: This) usize {
@@ -249,6 +268,7 @@ pub const World = struct {
     // around upon extension (e.g. a chunky linked list)?
     spheres_buf: std.ArrayList(vol.Sphere),
     planes_buf: std.ArrayList(vol.Plane),
+    cubes_buf: std.ArrayList(vol.Cube),
     lights_buf: std.ArrayList(PointLight),
 
     const This = @This();
@@ -322,6 +342,7 @@ pub const Camera = struct {
 pub const VolumePtr = union(enum) {
     sphere_idx: usize,
     plane_idx: usize,
+    cube_idx: usize,
 };
 
 pub const LightPtr = union(enum) {
