@@ -24,7 +24,7 @@ pub fn main() !void {
     defer if (!gpa_impl.detectLeaks()) std.debug.print("(No leaks)\n", .{});
 
     const scale = 1;
-    var qan = try Qanvas.init(gpa, 1200 * scale, 800 * scale);
+    var qan = try Qanvas.init(gpa, 1200 * scale, 1200 * scale);
     defer qan.deinit();
 
     try sdl2.init(.{
@@ -84,7 +84,7 @@ pub fn main() !void {
         }
 
         {
-            // checkered cube
+            // glass rectangle
             var cube = world.addVolume(vol.Cube);
             cube.ptr.material.color_map = mat.FlatColor.init(
                 Color.init(0.2, 0.2, 0.2),
@@ -230,6 +230,21 @@ pub fn main() !void {
         }
 
         {
+            var cone = world.addVolume(vol.Cone);
+            cone.ptr.material.color_map = mat.FlatColor.init(
+                Color.init(0.2, 0.2, 0.7),
+            );
+
+            cone.ptr.max = 1;
+            cone.ptr.min = 0;
+            cone.ptr.closed = false;
+
+            cone.ptr.transform = cone.ptr.transform.chain(.{
+                trans.makeTranslation(3, 4, 0),
+            });
+        }
+
+        {
             // checkered floor
             var pln = world.addVolume(vol.Plane);
             pln.ptr.material.color_map = mat.ThreeDCheckedColor.initSingle(Color.init(
@@ -240,6 +255,10 @@ pub fn main() !void {
             pln.ptr.material.specular = 0.1;
             pln.ptr.material.diffuse = 1;
             pln.ptr.material.reflective = 0.12;
+            pln.ptr.material.transform = pln.ptr.material.transform.chain(.{
+                trans.makeScaling(8, 8, 8),
+                trans.makeTranslation(0.5, 0, 0.5),
+            });
         }
 
         var cam = Camera.init(
@@ -249,8 +268,8 @@ pub fn main() !void {
         );
 
         // slightly down
-        const from = Point.init(0, 3.8, -10);
-        const to = Point.init(0, 2, 0);
+        const from = Point.init(-0.2, 3, -10);
+        const to = Point.init(-0.2, 2, 0);
         const up = Vector.init(0, 1, 0);
 
         cam.transform = trans.makeView(from, to, up);

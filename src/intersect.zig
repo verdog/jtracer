@@ -163,6 +163,10 @@ pub const Intersections = struct {
                 std.debug.assert(std.meta.activeTag(vptr) == .cylinder_idx);
                 self.intersectCylinder(vptr, volu, ray);
             },
+            vol.Cone => {
+                std.debug.assert(std.meta.activeTag(vptr) == .cone_idx);
+                self.intersectCone(vptr, volu, ray);
+            },
             else => unreachable,
         }
     }
@@ -268,21 +272,81 @@ pub const Intersections = struct {
         if (std.math.approxEqAbs(f64, td_ray.direction.y(), 0, mymath.floatTolerance)) return;
 
         { // lower
-            const t = (-cyl.length / 2.0 - td_ray.origin.y()) / td_ray.direction.y();
-            if (checkCap(td_ray, t))
+            const y = -cyl.length / 2.0;
+            const t = (y - td_ray.origin.y()) / td_ray.direction.y();
+            if (checkCap(td_ray, t, 1))
                 self.ixs.append(Intersection.init(t, vptr)) catch @panic("OOM");
         }
         { // upper
-            const t = (cyl.length / 2.0 - td_ray.origin.y()) / td_ray.direction.y();
-            if (checkCap(td_ray, t))
+            const y = cyl.length / 2.0;
+            const t = (y - td_ray.origin.y()) / td_ray.direction.y();
+            if (checkCap(td_ray, t, 1))
                 self.ixs.append(Intersection.init(t, vptr)) catch @panic("OOM");
         }
     }
 
-    fn checkCap(ray: Ray, t: f64) bool {
+    fn checkCap(ray: Ray, t: f64, radius: f64) bool {
         const x = ray.origin.x() + t * ray.direction.x();
         const z = ray.origin.z() + t * ray.direction.z();
-        return (std.math.pow(f64, x, 2) + std.math.pow(f64, z, 2)) <= 1;
+        return (std.math.pow(f64, x, 2) + std.math.pow(f64, z, 2)) <= std.math.pow(f64, radius, 2);
+    }
+
+    fn intersectCone(self: *This, vptr: VolPtr, cone: vol.Cone, ray: Ray) void {
+        const td_ray = ray.transformed(cone.transform.inverse);
+        const pow = std.math.pow;
+
+        // page 189. similar to cylinder intersection
+        const a = pow(f64, td_ray.direction.x(), 2) - pow(f64, td_ray.direction.y(), 2) + pow(f64, td_ray.direction.z(), 2);
+        const b = 2 * td_ray.origin.x() * td_ray.direction.x() - 2 * td_ray.origin.y() * td_ray.direction.y() + 2 * td_ray.origin.z() * td_ray.direction.z();
+        const c = pow(f64, td_ray.origin.x(), 2) - pow(f64, td_ray.origin.y(), 2) + pow(f64, td_ray.origin.z(), 2);
+
+        // if a is zero, the ray is parallel to at least one of the cone walls. if the ray
+        // is traveling towards the origin, it will hit the other cone. it will hit the
+        // other cone if b is not zero.
+        if (std.math.approxEqAbs(f64, a, 0, mymath.floatTolerance) and !std.math.approxEqAbs(f64, b, 0, mymath.floatTolerance)) {
+            const t = -c / (2 * b);
+            self.ixs.append(Intersection.init(t, vptr)) catch @panic("OOM");
+        } else blk: {
+            const discriminant = pow(f64, b, 2) - 4 * a * c;
+
+            if (discriminant < 0) break :blk; // imaginary solution, no intersections
+
+            {
+                const t = (-b - @sqrt(discriminant)) / (2 * a);
+                const y = td_ray.origin.y() + t * td_ray.direction.y();
+                if (y > cone.min and y < cone.max)
+                    self.ixs.append(Intersection.init(t, vptr)) catch @panic("OOM");
+            }
+
+            {
+                const t = (-b + @sqrt(discriminant)) / (2 * a);
+                const y = td_ray.origin.y() + t * td_ray.direction.y();
+                if (y > cone.min and y < cone.max)
+                    self.ixs.append(Intersection.init(t, vptr)) catch @panic("OOM");
+            }
+        }
+
+        intersectConeCaps(self, vptr, cone, td_ray);
+    }
+
+    fn intersectConeCaps(self: *This, vptr: VolPtr, cone: vol.Cone, td_ray: Ray) void {
+        // it is assumed that the passed ray was already t'formed by the caller
+
+        // open cones have no cap intersections
+        if (cone.closed != true) return;
+        // rays parallel to the caps can't intersect them
+        if (std.math.approxEqAbs(f64, td_ray.direction.y(), 0, mymath.floatTolerance)) return;
+
+        { // lower
+            const t = (cone.min - td_ray.origin.y()) / td_ray.direction.y();
+            if (checkCap(td_ray, t, @fabs(cone.min)))
+                self.ixs.append(Intersection.init(t, vptr)) catch @panic("OOM");
+        }
+        { // upper
+            const t = (cone.max - td_ray.origin.y()) / td_ray.direction.y();
+            if (checkCap(td_ray, t, @fabs(cone.max)))
+                self.ixs.append(Intersection.init(t, vptr)) catch @panic("OOM");
+        }
     }
 
     pub fn clear(self: *This) void {
@@ -906,6 +970,88 @@ test "Intersecting a truncated and capped cylinder" {
     // corner cases hitting a cap and exiting where the other cap intersects the cylinder
     try tst(Ray.init(Point.init(0, 3, -1), Vector.init(0, -2, 1).normalized()), 2);
     try tst(Ray.init(Point.init(0, -3, -1), Vector.init(0, 2, 1).normalized()), 2);
+}
+
+test "Intersecting a cone with a ray (non parallel)" {
+    const tst = struct {
+        fn t(ray: Ray, expected_t0: f64, expected_t1: f64) !void {
+            var c = vol.Cone.init();
+            const vptr = VolPtr{ .cone_idx = 0 };
+            var xs = Intersections.init(std.testing.allocator, .{});
+            defer xs.deinit();
+
+            errdefer {
+                print(xs.ixs.items[0].t);
+                print(xs.ixs.items[1].t);
+            }
+            xs.intersect(c, vptr, ray);
+            try expect(xs.ixs.items.len == 2);
+            try expect(xs.ixs.items[0].t == expected_t0);
+            try expect(xs.ixs.items[1].t == expected_t1);
+        }
+    }.t;
+
+    // origin point returns two identical ts
+    try tst(Ray.init(Point.init(0, 0, -5), Vector.init(0, 0, 1)), 5, 5);
+    // tangential point returns two identical ts
+    try tst(
+        Ray.init(Point.init(0, 0, -5), Vector.init(1, 1, 1).normalized()),
+        8.660254037844386,
+        8.660254037844386,
+    );
+    try tst(
+        Ray.init(Point.init(1, 1, -5), Vector.init(-0.5, -1, 1).normalized()),
+        4.550055679356349,
+        49.449944320643645,
+    );
+}
+
+test "Intersecting a cone with a ray (parallel)" {
+    const tst = struct {
+        fn t(ray: Ray, expected_t0: f64) !void {
+            var c = vol.Cone.init();
+            const vptr = VolPtr{ .cone_idx = 0 };
+            var xs = Intersections.init(std.testing.allocator, .{});
+            defer xs.deinit();
+
+            errdefer {
+                print(xs.ixs.items[0].t);
+            }
+            xs.intersect(c, vptr, ray);
+            try expect(xs.ixs.items.len == 1);
+            try expect(xs.ixs.items[0].t == expected_t0);
+        }
+    }.t;
+
+    try tst(
+        Ray.init(Point.init(0, 0, -1), Vector.init(0, 1, 1).normalized()),
+        0.3535533905932738,
+    );
+}
+
+test "Intersecting a cone's end caps" {
+    const tst = struct {
+        fn t(ray: Ray, expected_len: usize) !void {
+            var c = vol.Cone.init();
+            c.min = -0.5;
+            c.max = 0.5;
+            c.closed = true;
+            const vptr = VolPtr{ .cone_idx = 0 };
+            var xs = Intersections.init(std.testing.allocator, .{});
+            defer xs.deinit();
+
+            xs.intersect(c, vptr, ray);
+            try expect(xs.ixs.items.len == expected_len);
+        }
+    }.t;
+
+    // miss
+    try tst(Ray.init(Point.init(0, 0, -5), Vector.init(0, 1, 0).normalized()), 0);
+    try tst(Ray.init(Point.init(0, -10, 0.5001), Vector.init(0, 1, 0).normalized()), 0);
+    // parallel, 1 border 1 cap
+    try tst(Ray.init(Point.init(0, 0, -0.25), Vector.init(0, 1, 1).normalized()), 2);
+    // vertical, 2 borders 2 caps
+    try tst(Ray.init(Point.init(0, 0, -0.25), Vector.init(0, 1, 0).normalized()), 4);
 }
 
 const std = @import("std");

@@ -162,6 +162,69 @@ pub const Cylinder = struct {
     const This = @This();
 };
 
+pub const Cone = struct {
+    transform: trans.Transform,
+    material: Material,
+    min: f64,
+    max: f64,
+    closed: bool,
+
+    pub fn init() This {
+        return .{
+            .transform = trans.Transform{},
+            .material = Material.init(),
+            .min = -std.math.inf(f64),
+            .max = std.math.inf(f64),
+            .closed = false,
+        };
+    }
+
+    pub fn normalAt(self: This, world_space_point: Tuple) Tuple {
+        // into object space
+        const obj_space_point = self.transform.inverse.mult(world_space_point);
+
+        const obj_space_normal = blk: {
+            if (std.math.approxEqRel(f64, obj_space_point.x(), 0, mymath.floatTolerance) and
+                std.math.approxEqRel(f64, obj_space_point.y(), 0, mymath.floatTolerance) and
+                std.math.approxEqRel(f64, obj_space_point.z(), 0, mymath.floatTolerance))
+            {
+                // special case: (0, 0, 0). arbitrarily pick (1, 0, 0)
+                break :blk Vector.init(1, 0, 0);
+            }
+
+            // first check if we are on a cap or a wall
+            const dist = std.math.pow(f64, obj_space_point.x(), 2) + std.math.pow(f64, obj_space_point.z(), 2);
+            if (dist < std.math.pow(f64, obj_space_point.y(), 2) and obj_space_point.y() >= self.max - mymath.floatTolerance) {
+                // on top cap
+                break :blk Vector.init(0, 1, 0);
+            }
+            if (dist < std.math.pow(f64, obj_space_point.y(), 2) and obj_space_point.y() <= self.min + mymath.floatTolerance) {
+                // on bottom cap
+                break :blk Vector.init(0, -1, 0);
+            }
+
+            // not on cap...
+
+            const y = yblk: {
+                var ry = @sqrt(std.math.pow(f64, obj_space_point.x(), 2) + std.math.pow(f64, obj_space_point.z(), 2));
+                break :yblk if (obj_space_point.y() > 0) -ry else ry;
+            };
+            break :blk Vector.init(obj_space_point.x(), y, obj_space_point.z());
+        };
+
+        // back to world space
+        var world_space_normal = self.transform.inverse.transposed().mult(obj_space_normal);
+        // hack: technically we should multiply by submatrix(self.transform, 3, 3), to avoid
+        //       messing up the w component of the resulting vector. we can get away with
+        //       the above as long as we set the w component back to 0 manually
+        world_space_normal.vec[3] = 0;
+
+        return world_space_normal.normalized();
+    }
+
+    const This = @This();
+};
+
 test "The normal of a plane is constant everywhere" {
     const p = Plane.init();
 
@@ -459,6 +522,33 @@ test "A cylinder has a length" {
 test "A cylinder can be closed or open" {
     const cyl = Cylinder.init();
     try expect(cyl.closed == false);
+}
+
+test "The normal of a cone" {
+    const tst = struct {
+        fn t(p: Tuple, expected_n: Tuple) !void {
+            var c = Cone.init();
+            c.closed = true;
+            c.min = -2;
+            c.max = 2;
+            const n = c.normalAt(p);
+            errdefer {
+                print(n);
+                print(expected_n);
+            }
+            try expect(n.equals(expected_n));
+        }
+    }.t;
+
+    // normal at origin: always (1, 0, 0)
+    try tst(Point.init(0, 0, 0), Vector.init(1, 0, 0));
+    // on sides
+    try tst(Point.init(1, 1, 1), Vector.init(1, -@sqrt(2.0), 1).normalized());
+    try tst(Point.init(-1, -1, 0), Vector.init(-1, 1, 0).normalized());
+    // on caps
+    try tst(Point.init(0.5, 2, 0.5), Vector.init(0, 1, 0));
+    try tst(Point.init(-0.5, -2, -0.5), Vector.init(0, -1, 0));
+    try tst(Point.init(0, -2, 1.99), Vector.init(0, -1, 0));
 }
 
 const std = @import("std");

@@ -9,6 +9,7 @@ pub const World = struct {
             .planes_buf = std.ArrayList(vol.Plane).init(alctr),
             .cubes_buf = std.ArrayList(vol.Cube).init(alctr),
             .cylinders_buf = std.ArrayList(vol.Cylinder).init(alctr),
+            .cones_buf = std.ArrayList(vol.Cone).init(alctr),
             .lights_buf = std.ArrayList(PointLight).init(alctr),
         };
     }
@@ -18,6 +19,7 @@ pub const World = struct {
         self.planes_buf.deinit();
         self.cubes_buf.deinit();
         self.cylinders_buf.deinit();
+        self.cones_buf.deinit();
         self.lights_buf.deinit();
     }
 
@@ -55,6 +57,14 @@ pub const World = struct {
                     .ptr = &self.cylinders_buf.items[last],
                 };
             },
+            vol.Cone => {
+                self.cones_buf.append(vol.Cone.init()) catch unreachable;
+                const last = self.cones_buf.items.len - 1;
+                return .{
+                    .handle = VolumePtr{ .cone_idx = last },
+                    .ptr = &self.cones_buf.items[last],
+                };
+            },
             else => unreachable,
         }
     }
@@ -77,9 +87,11 @@ pub const World = struct {
 
     pub fn getVolume(self: This, vptr: VolumePtr, comptime T: type) *T {
         return switch (std.meta.activeTag(vptr)) {
-            .sphere_idx => return &self.spheres_buf.items[vptr.sphere_idx],
-            .plane_idx => return &self.planes_buf.items[vptr.plane_idx],
-            .cube_idx => return &self.cubes_buf.items[vptr.cube_idx],
+            .sphere_idx => return &self.spheres_buf.items[vptr.idx()],
+            .plane_idx => return &self.planes_buf.items[vptr.idx()],
+            .cube_idx => return &self.cubes_buf.items[vptr.idx()],
+            .cylinder_idx => return &self.cylinders.items[vptr.idx()],
+            .cone_idx => return &self.cones_buf.items[vptr.idx()],
         };
     }
 
@@ -115,6 +127,7 @@ pub const World = struct {
             .plane_idx => return @field(self.planes_buf.items[i], property),
             .cube_idx => return @field(self.cubes_buf.items[i], property),
             .cylinder_idx => return @field(self.cylinders_buf.items[i], property),
+            .cone_idx => return @field(self.cones_buf.items[i], property),
         };
     }
 
@@ -153,6 +166,11 @@ pub const World = struct {
 
         for (self.cylinders_buf.items) |*ptr, i| {
             const vptr = VolumePtr{ .cylinder_idx = i };
+            ixs.intersect(ptr.*, vptr, ray);
+        }
+
+        for (self.cones_buf.items) |*ptr, i| {
+            const vptr = VolumePtr{ .cone_idx = i };
             ixs.intersect(ptr.*, vptr, ray);
         }
     }
@@ -261,6 +279,7 @@ pub const World = struct {
                 .plane_idx => self.planes_buf.items[hit.idx()].normalAt(ray.position(hit.t)),
                 .cube_idx => self.cubes_buf.items[hit.idx()].normalAt(ray.position(hit.t)),
                 .cylinder_idx => self.cylinders_buf.items[hit.idx()].normalAt(ray.position(hit.t)),
+                .cone_idx => self.cones_buf.items[hit.idx()].normalAt(ray.position(hit.t)),
             };
 
             const bounds = ixs.findBoundaryObjects(hit);
@@ -288,6 +307,7 @@ pub const World = struct {
     planes_buf: std.ArrayList(vol.Plane),
     cubes_buf: std.ArrayList(vol.Cube),
     cylinders_buf: std.ArrayList(vol.Cylinder),
+    cones_buf: std.ArrayList(vol.Cone),
     lights_buf: std.ArrayList(PointLight),
 
     const This = @This();
@@ -363,6 +383,7 @@ pub const VolumePtr = union(enum) {
     plane_idx: usize,
     cube_idx: usize,
     cylinder_idx: usize,
+    cone_idx: usize,
 };
 
 pub const LightPtr = union(enum) {
