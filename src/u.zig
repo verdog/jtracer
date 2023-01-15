@@ -32,7 +32,7 @@ pub fn print(it: anytype) void {
             });
         },
         f64 => {
-            std.debug.print("{d: <8.5}\n", .{it});
+            std.debug.print("{d}\n", .{it});
         },
         else => {
             std.debug.print("{any}\n", .{it});

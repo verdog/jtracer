@@ -66,8 +66,7 @@ pub const Cube = struct {
     }
 
     pub fn normalAt(self: This, world_space_point: Tuple) Tuple {
-        // object space
-        const point = self.transform.inverse.mult(world_space_point);
+        const obj_space_point = self.transform.inverse.mult(world_space_point);
 
         const obj_space_normal = blk: {
             // cubes' normals are always the same for a given face. so finding the normal on a
@@ -85,19 +84,72 @@ pub const Cube = struct {
             // normal from the +-x face.
 
             const max_component = std.math.max3(
-                @fabs(point.x()),
-                @fabs(point.y()),
-                @fabs(point.z()),
+                @fabs(obj_space_point.x()),
+                @fabs(obj_space_point.y()),
+                @fabs(obj_space_point.z()),
             );
 
-            if (max_component == @fabs(point.x()))
-                break :blk Vector.init(point.x(), 0, 0);
-            if (max_component == @fabs(point.y()))
-                break :blk Vector.init(0, point.y(), 0);
-            // then assume max_component == @fabs(point.z())
-            break :blk Vector.init(0, 0, point.z());
+            if (max_component == @fabs(obj_space_point.x()))
+                break :blk Vector.init(obj_space_point.x(), 0, 0);
+            if (max_component == @fabs(obj_space_point.y()))
+                break :blk Vector.init(0, obj_space_point.y(), 0);
+            // then assume max_component == @fabs(obj_space_point.z())
+            break :blk Vector.init(0, 0, obj_space_point.z());
         };
 
+        var world_space_normal = self.transform.inverse.transposed().mult(obj_space_normal);
+        // hack: technically we should multiply by submatrix(self.transform, 3, 3), to avoid
+        //       messing up the w component of the resulting vector. we can get away with
+        //       the above as long as we set the w component back to 0 manually
+        world_space_normal.vec[3] = 0;
+
+        return world_space_normal.normalized();
+    }
+
+    const This = @This();
+};
+
+pub const Cylinder = struct {
+    transform: trans.Transform,
+    material: Material,
+    length: f64,
+    closed: bool,
+
+    pub fn init() This {
+        return .{
+            .transform = trans.Transform{},
+            .material = Material.init(),
+            .length = std.math.inf(f64),
+            .closed = false,
+        };
+    }
+
+    pub fn normalAt(self: This, world_space_point: Tuple) Tuple {
+        // into object space
+        const obj_space_point = self.transform.inverse.mult(world_space_point);
+
+        const obj_space_normal = blk: {
+            // first check if we are on a cap or a wall
+            const dist = std.math.pow(f64, obj_space_point.x(), 2) + std.math.pow(f64, obj_space_point.z(), 2);
+            if (dist < 1 and obj_space_point.y() >= self.length / 2.0 - mymath.floatTolerance) {
+                // on top cap
+                break :blk Vector.init(0, 1, 0);
+            }
+            if (dist < 1 and obj_space_point.y() <= -self.length / 2.0 + mymath.floatTolerance) {
+                // on bottom cap
+                break :blk Vector.init(0, -1, 0);
+            }
+
+            // not on cap...
+
+            // in normal calculation, even if not technically true, we treat cylinders as
+            // having infinite height, and assume that any point passed into this function is
+            // on the surface of the cylinder. to get the normal under those conditions, simply
+            // remove the y component of the point.
+            break :blk Vector.init(obj_space_point.x(), 0, obj_space_point.z());
+        };
+
+        // back to world space
         var world_space_normal = self.transform.inverse.transposed().mult(obj_space_normal);
         // hack: technically we should multiply by submatrix(self.transform, 3, 3), to avoid
         //       messing up the w component of the resulting vector. we can get away with
@@ -312,10 +364,108 @@ test "A sphere may be assigned a material" {
     try expect(std.meta.eql(s.material, m));
 }
 
+test "The normal on a cylinder" {
+    const tst = struct {
+        fn t(p: Tuple, expected_n: Tuple) !void {
+            const c = Cylinder.init();
+            const n = c.normalAt(p);
+            errdefer {
+                print(n);
+                print(expected_n);
+            }
+            try expect(n.equals(expected_n));
+        }
+    }.t;
+
+    try tst(Point.init(1, 0, 0), Vector.init(1, 0, 0));
+    try tst(Point.init(0, 5, -1), Vector.init(0, 0, -1));
+    try tst(Point.init(0, -2, 1), Vector.init(0, 0, 1));
+    try tst(Point.init(-1, 1, 0), Vector.init(-1, 0, 0));
+    try tst(
+        Point.init(@sqrt(2.0) / 2.0, 10, @sqrt(2.0) / 2.0),
+        Vector.init(@sqrt(2.0) / 2.0, 0, @sqrt(2.0) / 2.0),
+    );
+}
+
+test "The normal on a scaled cylinder" {
+    const tst = struct {
+        fn t(p: Tuple, expected_n: Tuple) !void {
+            var c = Cylinder.init();
+            c.transform = c.transform.mult(trans.makeScaling(2, 1, 2));
+            const n = c.normalAt(p);
+            errdefer {
+                print(n);
+                print(expected_n);
+            }
+            try expect(n.equals(expected_n));
+        }
+    }.t;
+
+    try tst(Point.init(2, 0, 0), Vector.init(1, 0, 0));
+    try tst(Point.init(0, 5, -2), Vector.init(0, 0, -1));
+    try tst(Point.init(0, -2, 2), Vector.init(0, 0, 1));
+    try tst(Point.init(-2, 1, 0), Vector.init(-1, 0, 0));
+}
+
+test "The normal on a rotated cylinder" {
+    const tst = struct {
+        fn t(p: Tuple, expected_n: Tuple) !void {
+            var c = Cylinder.init();
+            c.transform = c.transform.mult(trans.makeRotationZ(std.math.pi / 2.0));
+            const n = c.normalAt(p);
+            errdefer {
+                print(n);
+                print(expected_n);
+            }
+            try expect(n.equals(expected_n));
+        }
+    }.t;
+
+    try tst(Point.init(0, 1, 0), Vector.init(0, 1, 0));
+    try tst(Point.init(5, 1, 0), Vector.init(0, 1, 0));
+    try tst(Point.init(5, 0, -1), Vector.init(0, 0, -1));
+    try tst(Point.init(5, 0, 1), Vector.init(0, 0, 1));
+}
+
+test "The normal on the caps of a cylinder" {
+    const tst = struct {
+        fn t(p: Tuple, expected_n: Tuple) !void {
+            var c = Cylinder.init();
+            c.length = 1;
+            c.closed = true;
+            // c.transform = c.transform.mult(trans.makeRotationZ(std.math.pi / 2.0));
+            const n = c.normalAt(p);
+            errdefer {
+                print(n);
+                print(expected_n);
+            }
+            try expect(n.equals(expected_n));
+        }
+    }.t;
+
+    try tst(Point.init(0, 1, 0), Vector.init(0, 1, 0));
+    try tst(Point.init(0.5, 1, 0), Vector.init(0, 1, 0));
+    try tst(Point.init(0, 1, 0.5), Vector.init(0, 1, 0));
+    try tst(Point.init(0, -1, 0), Vector.init(0, -1, 0));
+    try tst(Point.init(-0.5, -1, 0), Vector.init(0, -1, 0));
+    try tst(Point.init(0, -1, -0.5), Vector.init(0, -1, 0));
+}
+
+test "A cylinder has a length" {
+    const cyl = Cylinder.init();
+    try expect(cyl.length == std.math.inf(f64));
+}
+
+test "A cylinder can be closed or open" {
+    const cyl = Cylinder.init();
+    try expect(cyl.closed == false);
+}
+
 const std = @import("std");
 
 const mtx = @import("matrix.zig");
 const trans = @import("transform.zig");
+const mymath = @import("mymath.zig");
 
 const Tuple = @import("tuple.zig").Tuple;
 const Point = @import("tuple.zig").Point;

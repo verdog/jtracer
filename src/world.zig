@@ -8,6 +8,7 @@ pub const World = struct {
             .spheres_buf = std.ArrayList(vol.Sphere).init(alctr),
             .planes_buf = std.ArrayList(vol.Plane).init(alctr),
             .cubes_buf = std.ArrayList(vol.Cube).init(alctr),
+            .cylinders_buf = std.ArrayList(vol.Cylinder).init(alctr),
             .lights_buf = std.ArrayList(PointLight).init(alctr),
         };
     }
@@ -16,6 +17,7 @@ pub const World = struct {
         self.spheres_buf.deinit();
         self.planes_buf.deinit();
         self.cubes_buf.deinit();
+        self.cylinders_buf.deinit();
         self.lights_buf.deinit();
     }
 
@@ -43,6 +45,14 @@ pub const World = struct {
                 return .{
                     .handle = VolumePtr{ .cube_idx = last },
                     .ptr = &self.cubes_buf.items[last],
+                };
+            },
+            vol.Cylinder => {
+                self.cylinders_buf.append(vol.Cylinder.init()) catch unreachable;
+                const last = self.cylinders_buf.items.len - 1;
+                return .{
+                    .handle = VolumePtr{ .cylinder_idx = last },
+                    .ptr = &self.cylinders_buf.items[last],
                 };
             },
             else => unreachable,
@@ -97,10 +107,14 @@ pub const World = struct {
         volp: VolumePtr,
         comptime property: []const u8,
     ) PropertyT(property) {
+        const i = switch (volp) {
+            inline else => |i| i,
+        };
         return switch (std.meta.activeTag(volp)) {
-            .sphere_idx => return @field(self.spheres_buf.items[volp.sphere_idx], property),
-            .plane_idx => return @field(self.planes_buf.items[volp.plane_idx], property),
-            .cube_idx => return @field(self.cubes_buf.items[volp.cube_idx], property),
+            .sphere_idx => return @field(self.spheres_buf.items[i], property),
+            .plane_idx => return @field(self.planes_buf.items[i], property),
+            .cube_idx => return @field(self.cubes_buf.items[i], property),
+            .cylinder_idx => return @field(self.cylinders_buf.items[i], property),
         };
     }
 
@@ -134,6 +148,11 @@ pub const World = struct {
 
         for (self.cubes_buf.items) |*ptr, i| {
             const vptr = VolumePtr{ .cube_idx = i };
+            ixs.intersect(ptr.*, vptr, ray);
+        }
+
+        for (self.cylinders_buf.items) |*ptr, i| {
+            const vptr = VolumePtr{ .cylinder_idx = i };
             ixs.intersect(ptr.*, vptr, ray);
         }
     }
@@ -238,9 +257,10 @@ pub const World = struct {
 
         if (ixs.hit()) |hit| {
             const normal = switch (std.meta.activeTag(hit.vptr)) {
-                .sphere_idx => self.spheres_buf.items[hit.vptr.sphere_idx].normalAt(ray.position(hit.t)),
-                .plane_idx => self.planes_buf.items[hit.vptr.plane_idx].normalAt(ray.position(hit.t)),
-                .cube_idx => self.cubes_buf.items[hit.vptr.cube_idx].normalAt(ray.position(hit.t)),
+                .sphere_idx => self.spheres_buf.items[hit.idx()].normalAt(ray.position(hit.t)),
+                .plane_idx => self.planes_buf.items[hit.idx()].normalAt(ray.position(hit.t)),
+                .cube_idx => self.cubes_buf.items[hit.idx()].normalAt(ray.position(hit.t)),
+                .cylinder_idx => self.cylinders_buf.items[hit.idx()].normalAt(ray.position(hit.t)),
             };
 
             const bounds = ixs.findBoundaryObjects(hit);
@@ -264,11 +284,10 @@ pub const World = struct {
         return self.lights_buf.items.len;
     }
 
-    // TODO change these to a list that won't move data
-    // around upon extension (e.g. a chunky linked list)?
     spheres_buf: std.ArrayList(vol.Sphere),
     planes_buf: std.ArrayList(vol.Plane),
     cubes_buf: std.ArrayList(vol.Cube),
+    cylinders_buf: std.ArrayList(vol.Cylinder),
     lights_buf: std.ArrayList(PointLight),
 
     const This = @This();
@@ -343,6 +362,7 @@ pub const VolumePtr = union(enum) {
     sphere_idx: usize,
     plane_idx: usize,
     cube_idx: usize,
+    cylinder_idx: usize,
 };
 
 pub const LightPtr = union(enum) {

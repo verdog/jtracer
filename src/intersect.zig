@@ -107,6 +107,12 @@ pub const Intersection = struct {
         return self.t == other.t and std.meta.eql(self.vptr, other.vptr);
     }
 
+    pub fn idx(self: This) usize {
+        return switch (self.vptr) {
+            inline else => |i| return i,
+        };
+    }
+
     const This = @This();
 };
 
@@ -152,6 +158,10 @@ pub const Intersections = struct {
             vol.Cube => {
                 std.debug.assert(std.meta.activeTag(vptr) == .cube_idx);
                 self.intersectCube(vptr, volu, ray);
+            },
+            vol.Cylinder => {
+                std.debug.assert(std.meta.activeTag(vptr) == .cylinder_idx);
+                self.intersectCylinder(vptr, volu, ray);
             },
             else => unreachable,
         }
@@ -211,6 +221,68 @@ pub const Intersections = struct {
 
         self.ixs.append(Intersection.init(tmin, vptr)) catch @panic("OOM");
         self.ixs.append(Intersection.init(tmax, vptr)) catch @panic("OOM");
+    }
+
+    fn intersectCylinder(self: *This, vptr: VolPtr, cyl: vol.Cylinder, ray: Ray) void {
+        const td_ray = ray.transformed(cyl.transform.inverse);
+        const pow = std.math.pow;
+
+        // page 179. similar to sphere intersection
+        const a = pow(f64, td_ray.direction.x(), 2) + pow(f64, td_ray.direction.z(), 2);
+
+        // if a is zero, the ray is parallel to the cylinder walls and we should skip to caps.
+        blk: {
+            if (!std.math.approxEqAbs(f64, a, 0, mymath.floatTolerance)) {
+                const b = 2 * td_ray.origin.x() * td_ray.direction.x() + 2 * td_ray.origin.z() * td_ray.direction.z();
+                const c = pow(f64, td_ray.origin.x(), 2) + pow(f64, td_ray.origin.z(), 2) - 1;
+
+                const discriminant = pow(f64, b, 2) - 4 * a * c;
+
+                if (discriminant < 0) break :blk; // imaginary solution, no intersections
+
+                {
+                    const t = (-b - @sqrt(discriminant)) / (2 * a);
+                    const y = td_ray.origin.y() + t * td_ray.direction.y();
+                    if (@fabs(y) < cyl.length / 2.0)
+                        self.ixs.append(Intersection.init(t, vptr)) catch @panic("OOM");
+                }
+
+                {
+                    const t = (-b + @sqrt(discriminant)) / (2 * a);
+                    const y = td_ray.origin.y() + t * td_ray.direction.y();
+                    if (@fabs(y) < cyl.length / 2.0)
+                        self.ixs.append(Intersection.init(t, vptr)) catch @panic("OOM");
+                }
+            }
+        }
+
+        intersectCylinderCaps(self, vptr, cyl, td_ray);
+    }
+
+    fn intersectCylinderCaps(self: *This, vptr: VolPtr, cyl: vol.Cylinder, td_ray: Ray) void {
+        // it is assumed that the passed ray was already t'formed by the caller
+
+        // open cylinders have no cap intersections
+        if (cyl.closed != true) return;
+        // rays parallel to the caps can't intersect them
+        if (std.math.approxEqAbs(f64, td_ray.direction.y(), 0, mymath.floatTolerance)) return;
+
+        { // lower
+            const t = (-cyl.length / 2.0 - td_ray.origin.y()) / td_ray.direction.y();
+            if (checkCap(td_ray, t))
+                self.ixs.append(Intersection.init(t, vptr)) catch @panic("OOM");
+        }
+        { // upper
+            const t = (cyl.length / 2.0 - td_ray.origin.y()) / td_ray.direction.y();
+            if (checkCap(td_ray, t))
+                self.ixs.append(Intersection.init(t, vptr)) catch @panic("OOM");
+        }
+    }
+
+    fn checkCap(ray: Ray, t: f64) bool {
+        const x = ray.origin.x() + t * ray.direction.x();
+        const z = ray.origin.z() + t * ray.direction.z();
+        return (std.math.pow(f64, x, 2) + std.math.pow(f64, z, 2)) <= 1;
     }
 
     pub fn clear(self: *This) void {
@@ -730,6 +802,110 @@ test "A ray misses a cube" {
     try tst(Ray.initC(2, 0, 2, 0, 0, -1)); // parallel
     try tst(Ray.initC(0, 2, 2, 0, -1, 0)); // parallel
     try tst(Ray.initC(2, 2, 0, -1, 0, 0)); // parallel
+}
+
+test "A ray misses a cylinder" {
+    const tst = struct {
+        fn t(ray: Ray) !void {
+            const c = vol.Cylinder.init();
+            const vptr = VolPtr{ .cylinder_idx = 0 };
+            var xs = Intersections.init(std.testing.allocator, .{});
+            defer xs.deinit();
+
+            xs.intersect(c, vptr, ray);
+            try expect(xs.ixs.items.len == 0);
+        }
+    }.t;
+
+    try tst(Ray.init(Point.init(1, 0, 0), Vector.init(0, 1, 0))); // parallel
+    try tst(Ray.init(Point.init(0, 0, 0), Vector.init(0, 1, 0))); // out the top as default
+    // cylinders are uncapped
+    try tst(Ray.init(Point.init(0, 0, -5), Vector.init(1, 1, 1).normalized())); // diagonal
+}
+
+test "A ray hits a cylinder" {
+    const tst = struct {
+        fn t(ray: Ray, expected_t0: f64, expected_t1: f64) !void {
+            const c = vol.Cylinder.init();
+            const vptr = VolPtr{ .cylinder_idx = 0 };
+            var xs = Intersections.init(std.testing.allocator, .{});
+            defer xs.deinit();
+
+            xs.intersect(c, vptr, ray);
+            try expect(xs.ixs.items.len == 2);
+
+            errdefer print(xs.ixs.items[1].t);
+            errdefer print(xs.ixs.items[0].t);
+            try expect(xs.ixs.items[0].t == expected_t0);
+            try expect(xs.ixs.items[1].t == expected_t1);
+            try expect(std.meta.eql(xs.ixs.items[0].vptr, vptr));
+            try expect(std.meta.eql(xs.ixs.items[1].vptr, vptr));
+        }
+    }.t;
+
+    // tangent intersections still return two hits
+    try tst(Ray.init(Point.init(1, 0, -5), Vector.init(0, 0, 1)), 5, 5);
+    // through the middle
+    try tst(Ray.init(Point.init(0, 0, -5), Vector.init(0, 0, 1)), 4, 6);
+    // at an angle
+    try tst(
+        Ray.init(Point.init(0.5, 0, -5), Vector.init(0.1, 1, 1).normalized()),
+        6.80798191702732,
+        7.088723439378861,
+    );
+}
+
+test "Intersecting a truncated cylinder" {
+    const tst = struct {
+        fn t(ray: Ray, expected_len: usize) !void {
+            var c = vol.Cylinder.init();
+            c.length = 4;
+            const vptr = VolPtr{ .cylinder_idx = 0 };
+            var xs = Intersections.init(std.testing.allocator, .{});
+            defer xs.deinit();
+
+            xs.intersect(c, vptr, ray);
+            try expect(xs.ixs.items.len == expected_len);
+        }
+    }.t;
+
+    // ray from inside, escaping the top
+    try tst(Ray.init(Point.init(0, 0, 0), Vector.init(0.1, 1, 0).normalized()), 0);
+    // perpendicular, but above and below
+    try tst(Ray.init(Point.init(0, 3, -5), Vector.init(0, 0, 1)), 0);
+    try tst(Ray.init(Point.init(0, -3, -5), Vector.init(0, 0, 1)), 0);
+    // edge cases showing the bounds are exclusive
+    try tst(Ray.init(Point.init(0, 2, 0), Vector.init(0, 0, 1)), 0);
+    try tst(Ray.init(Point.init(0, -2, 0), Vector.init(0, 0, 1)), 0);
+    // a hit
+    try tst(Ray.init(Point.init(0, -1, 0), Vector.init(0, 0, 1)), 2);
+    // a single hit
+    try tst(Ray.init(Point.init(0, 2.5, 0), Vector.init(1, -1, 0).normalized()), 1);
+}
+
+test "Intersecting a truncated and capped cylinder" {
+    const tst = struct {
+        fn t(ray: Ray, expected_len: usize) !void {
+            var c = vol.Cylinder.init();
+            c.length = 2;
+            c.closed = true;
+            const vptr = VolPtr{ .cylinder_idx = 0 };
+            var xs = Intersections.init(std.testing.allocator, .{});
+            defer xs.deinit();
+
+            xs.intersect(c, vptr, ray);
+            try expect(xs.ixs.items.len == expected_len);
+        }
+    }.t;
+
+    // ray from above, hitting the caps
+    try tst(Ray.init(Point.init(0, 4, 0), Vector.init(0, -1, 0).normalized()), 2);
+    // hitting a cap and then a wall
+    try tst(Ray.init(Point.init(0, 1.1, 0), Vector.init(2, -1, 0).normalized()), 2);
+    try tst(Ray.init(Point.init(0, -1.1, 0), Vector.init(2, 1, 0).normalized()), 2);
+    // corner cases hitting a cap and exiting where the other cap intersects the cylinder
+    try tst(Ray.init(Point.init(0, 3, -1), Vector.init(0, -2, 1).normalized()), 2);
+    try tst(Ray.init(Point.init(0, -3, -1), Vector.init(0, 2, 1).normalized()), 2);
 }
 
 const std = @import("std");
