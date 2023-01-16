@@ -31,11 +31,8 @@ pub fn print(it: anytype) void {
                 it.vec[2],
             });
         },
-        f64 => {
-            std.debug.print("{d}\n", .{it});
-        },
-        else => {
-            std.debug.print("{any}\n", .{it});
-        },
+        f64 => std.debug.print("{d}\n", .{it}),
+        []u8, []const u8 => std.debug.print("{s}\n", .{it}),
+        else => std.debug.print("{any}\n", .{it}),
     }
 }

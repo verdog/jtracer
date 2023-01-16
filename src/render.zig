@@ -76,7 +76,7 @@ pub fn startRenderEngine(world: World, cam: Camera, qan: *Qanvas, alctr: std.mem
     var threads_working_mem = threads_working_mem_buf[0..num_threads];
 
     for (threads_working_mem) |*slc| {
-        slc.* = alctr.alloc(u8, 1024 * 1024 * 32) catch unreachable;
+        slc.* = alctr.alloc(u8, 1024 * 1024 * 64) catch unreachable;
     }
 
     defer for (threads_working_mem) |slc| {

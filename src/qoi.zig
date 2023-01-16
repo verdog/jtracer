@@ -148,7 +148,10 @@ pub const Chunks = struct {
         }
     };
 
-    pub const Tailer = packed struct { magic: u64 = @bitCast(u64, @as([8]u8, .{ 0, 0, 0, 0, 0, 0, 0, 1 })) };
+    pub const Tailer = packed struct { magic: u64 = @bitCast(u64, @as([8]u8, .{
+        0, 0, 0, 0,
+        0, 0, 0, 1,
+    })) };
 };
 
 fn sizeOnDisk(comptime T: type) usize {

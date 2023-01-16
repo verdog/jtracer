@@ -107,7 +107,7 @@ pub const Intersection = struct {
         return self.t == other.t and std.meta.eql(self.vptr, other.vptr);
     }
 
-    pub fn idx(self: This) usize {
+    pub fn idx(self: This) u16 {
         return switch (self.vptr) {
             inline else => |i| return i,
         };

@@ -1,0 +1,127 @@
+CAMERA
+scale 0.3333
+width 1200
+height 1200
+fov pi/2.5
+from (-0.2,3.5,-10)
+to (-0.2,2,0)
+up (0,1,0)
+
+POINTLIGHT
+position (-4,10,-5)
+intensity (1,1,1)
+
+CUBE tall right
+material 3dchecker (0.6,0.2,0.2) (0.2,0.2,0.6)
+transform rotate y pi/-12
+transform scale (0.7,2,0.7)
+transform translate (3,2,0)
+
+CUBE middle mirror
+material 3dchecker (0.6,0.2,0.2) (0.2,0.2,0.6)
+material diffuse 0.1
+material ambient 0
+material reflective 1
+transform rotate y pi/4.0
+transform translate (0,1,0)
+
+CUBE squashed left
+material 3dchecker (0.6,0.2,0.2) (0.2,0.2,0.6)
+transform scale (1.2,0.7,1.2)
+transform translate (-3,0.7,0)
+
+CUBE on top of left
+material ring (0.6,0.2,0.2) (0.2,0.2,0.6)
+transform scale (0.3,0.3,0.3)
+transform rotate y 42
+transform translate (-3.3,1.7,0.3)
+
+CUBE glass in front
+material flat (0.2,0.2,0.2)
+material diffuse 0.2
+material ambient 0.1
+material reflective 0.9
+material transparency 0.9
+material refractive 1.52
+transform scale (3,0.1,0.7)
+transform rotate x pi/2.0
+transform rotate y 0.3
+transform translate (0,0.7001,-3)
+
+PLANE floor
+material 3dchecker (0.5,0.5,0.5) (0.25,0.25,0.25)
+material specular 0.1
+material diffuse 1
+material reflective 0.12
+material transform translate (0.5,0,0.5)
+material transform scale (8,8,8)
+
+SPHERE on middle cube
+material flat (0.2,0.2,0.7)
+transform translate (0,3,0)
+
+SPHERE to right
+material flat (0.2,0.2,0.7)
+transform translate (3,1,-2.5)
+
+CYLINDER on left cube upright
+material 3dchecker (0.6,0.2,0.2) (0.2,0.2,0.6)
+closed true
+length 1.5
+transform scale (0.3,1,0.3)
+transform rotate y 32
+transform translate (-2.2,2.15,-0.8)
+
+CYLINDER on left cube on side, glass
+material flat (0.1,0.1,0.1)
+material diffuse 0.2
+material ambient 0.1
+material reflective 0.9
+material transparency 0.9
+material refractive 1.52
+closed true
+length 2
+transform scale (0.25,2,0.25)
+transform rotate x pi/2.0
+transform rotate y pi/4.0
+transform translate (-3,1.7,-0.5)
+
+CYLINDER hollow on floor left
+material 3dchecker (0.6,0.2,0.2) (0.2,0.2,0.6)
+length 3
+transform scale (0.8,0.4,0.8)
+transform rotate x pi/2
+transform rotate y -1.1
+transform translate (-3.5,0.8,-3.2)
+
+CONE on top of cylinder left
+material 3dchecker (0.6,0.2,0.2) (0.2,0.2,0.6)
+max 0
+min -1
+closed false
+transform scale (0.3,1,0.3)
+transform rotate y 32
+transform translate (-2.2,3.9,-0.8)
+
+CONE gym on top of right cube, right half
+material flat (0.2,0.2,0.2)
+max 1
+min 0
+closed true
+material diffuse 0.1
+material ambient 0.1
+material reflective 0.9
+transform rotate z pi/2
+transform translate (4,5,0)
+
+CONE gym on top of right cube, left half
+material flat (0.2,0.2,0.2)
+max 0
+min -1
+closed true
+material diffuse 0.1
+material ambient 0.1
+material reflective 0.9
+transform rotate z pi/2
+transform translate (2,5,0)
+

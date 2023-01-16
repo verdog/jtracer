@@ -27,7 +27,7 @@ pub const World = struct {
         switch (T) {
             vol.Sphere => {
                 self.spheres_buf.append(vol.Sphere.init()) catch unreachable;
-                const last = self.spheres_buf.items.len - 1;
+                const last = @intCast(u16, self.spheres_buf.items.len - 1);
                 return .{
                     .handle = VolumePtr{ .sphere_idx = last },
                     .ptr = &self.spheres_buf.items[last],
@@ -35,7 +35,7 @@ pub const World = struct {
             },
             vol.Plane => {
                 self.planes_buf.append(vol.Plane.init()) catch unreachable;
-                const last = self.planes_buf.items.len - 1;
+                const last = @intCast(u16, self.planes_buf.items.len - 1);
                 return .{
                     .handle = VolumePtr{ .plane_idx = last },
                     .ptr = &self.planes_buf.items[last],
@@ -43,7 +43,7 @@ pub const World = struct {
             },
             vol.Cube => {
                 self.cubes_buf.append(vol.Cube.init()) catch unreachable;
-                const last = self.cubes_buf.items.len - 1;
+                const last = @intCast(u16, self.cubes_buf.items.len - 1);
                 return .{
                     .handle = VolumePtr{ .cube_idx = last },
                     .ptr = &self.cubes_buf.items[last],
@@ -51,7 +51,7 @@ pub const World = struct {
             },
             vol.Cylinder => {
                 self.cylinders_buf.append(vol.Cylinder.init()) catch unreachable;
-                const last = self.cylinders_buf.items.len - 1;
+                const last = @intCast(u16, self.cylinders_buf.items.len - 1);
                 return .{
                     .handle = VolumePtr{ .cylinder_idx = last },
                     .ptr = &self.cylinders_buf.items[last],
@@ -59,7 +59,7 @@ pub const World = struct {
             },
             vol.Cone => {
                 self.cones_buf.append(vol.Cone.init()) catch unreachable;
-                const last = self.cones_buf.items.len - 1;
+                const last = @intCast(u16, self.cones_buf.items.len - 1);
                 return .{
                     .handle = VolumePtr{ .cone_idx = last },
                     .ptr = &self.cones_buf.items[last],
@@ -75,7 +75,7 @@ pub const World = struct {
                 const point = @import("tuple.zig").Point.init(0, 0, 0);
                 const color = @import("color.zig").Color.init(1, 1, 1);
                 self.lights_buf.append(PointLight.init(point, color)) catch unreachable;
-                const last = self.lights_buf.items.len - 1;
+                const last = @intCast(u16, self.lights_buf.items.len - 1);
                 return .{
                     .handle = LightPtr{ .light_idx = last },
                     .ptr = &self.lights_buf.items[last],
@@ -150,27 +150,27 @@ pub const World = struct {
         ixs.clear();
 
         for (self.spheres_buf.items) |*ptr, i| {
-            const vptr = VolumePtr{ .sphere_idx = i };
+            const vptr = VolumePtr{ .sphere_idx = @intCast(u16, i) };
             ixs.intersect(ptr.*, vptr, ray);
         }
 
         for (self.planes_buf.items) |*ptr, i| {
-            const vptr = VolumePtr{ .plane_idx = i };
+            const vptr = VolumePtr{ .plane_idx = @intCast(u16, i) };
             ixs.intersect(ptr.*, vptr, ray);
         }
 
         for (self.cubes_buf.items) |*ptr, i| {
-            const vptr = VolumePtr{ .cube_idx = i };
+            const vptr = VolumePtr{ .cube_idx = @intCast(u16, i) };
             ixs.intersect(ptr.*, vptr, ray);
         }
 
         for (self.cylinders_buf.items) |*ptr, i| {
-            const vptr = VolumePtr{ .cylinder_idx = i };
+            const vptr = VolumePtr{ .cylinder_idx = @intCast(u16, i) };
             ixs.intersect(ptr.*, vptr, ray);
         }
 
         for (self.cones_buf.items) |*ptr, i| {
-            const vptr = VolumePtr{ .cone_idx = i };
+            const vptr = VolumePtr{ .cone_idx = @intCast(u16, i) };
             ixs.intersect(ptr.*, vptr, ray);
         }
     }
@@ -379,15 +379,15 @@ pub const Camera = struct {
 };
 
 pub const VolumePtr = union(enum) {
-    sphere_idx: usize,
-    plane_idx: usize,
-    cube_idx: usize,
-    cylinder_idx: usize,
-    cone_idx: usize,
+    sphere_idx: u16,
+    plane_idx: u16,
+    cube_idx: u16,
+    cylinder_idx: u16,
+    cone_idx: u16,
 };
 
 pub const LightPtr = union(enum) {
-    light_idx: usize,
+    light_idx: u16,
 };
 
 fn getTestWorld(alctr: std.mem.Allocator) World {
