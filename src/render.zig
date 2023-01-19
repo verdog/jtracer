@@ -61,9 +61,9 @@ pub fn startRenderEngine(world: World, cam: Camera, qan: *Qanvas, alctr: std.mem
     var chunks = getChunks(32, qan.*, alctr);
     defer alctr.free(chunks);
 
-    var prng = std.rand.DefaultPrng.init(0);
-    var random = prng.random();
-    random.shuffle(Chunk, chunks);
+    // var prng = std.rand.DefaultPrng.init(0);
+    // var random = prng.random();
+    // random.shuffle(Chunk, chunks);
 
     const cpus = std.Thread.getCpuCount() catch unreachable;
     const num_threads = @divTrunc(cpus * 3, 4) + 1;

@@ -1,10 +1,10 @@
 CAMERA
-scale 0.3333
+scale 1
 width 1200
 height 1200
 fov pi/2.5
-from (-0.2,3.5,-10)
-to (-0.2,2,0)
+from (-0.2,3.25,-10)
+to (-0.2,1.75,0)
 up (0,1,0)
 
 POINTLIGHT
@@ -103,7 +103,7 @@ transform scale (0.3,1,0.3)
 transform rotate y 32
 transform translate (-2.2,3.9,-0.8)
 
-CONE gym on top of right cube, right half
+CONE gem on top of right cube, right half
 material flat (0.2,0.2,0.2)
 max 1
 min 0
@@ -114,7 +114,7 @@ material reflective 0.9
 transform rotate z pi/2
 transform translate (4,5,0)
 
-CONE gym on top of right cube, left half
+CONE gem on top of right cube, left half
 material flat (0.2,0.2,0.2)
 max 0
 min -1
