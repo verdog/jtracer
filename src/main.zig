@@ -25,6 +25,8 @@ pub fn main() !void {
     defer if (!gpa_impl.detectLeaks()) std.debug.print("(No leaks)\n", .{});
 
     const scene_file = try file.parseWorldFile("scene.txt", gpa);
+    defer gpa.free(scene_file.text);
+    defer gpa.free(scene_file.sections);
     defer scene_file.world.deinit();
 
     var qan = try Qanvas.init(

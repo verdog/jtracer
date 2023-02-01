@@ -24,49 +24,34 @@ pub const World = struct {
     }
 
     pub fn addVolume(self: *This, comptime T: type) struct { handle: VolumePtr, ptr: *T } {
-        switch (T) {
-            vol.Sphere => {
-                self.spheres_buf.append(vol.Sphere.init()) catch unreachable;
-                const last = @intCast(u16, self.spheres_buf.items.len - 1);
-                return .{
-                    .handle = VolumePtr{ .sphere_idx = last },
-                    .ptr = &self.spheres_buf.items[last],
-                };
-            },
-            vol.Plane => {
-                self.planes_buf.append(vol.Plane.init()) catch unreachable;
-                const last = @intCast(u16, self.planes_buf.items.len - 1);
-                return .{
-                    .handle = VolumePtr{ .plane_idx = last },
-                    .ptr = &self.planes_buf.items[last],
-                };
-            },
-            vol.Cube => {
-                self.cubes_buf.append(vol.Cube.init()) catch unreachable;
-                const last = @intCast(u16, self.cubes_buf.items.len - 1);
-                return .{
-                    .handle = VolumePtr{ .cube_idx = last },
-                    .ptr = &self.cubes_buf.items[last],
-                };
-            },
-            vol.Cylinder => {
-                self.cylinders_buf.append(vol.Cylinder.init()) catch unreachable;
-                const last = @intCast(u16, self.cylinders_buf.items.len - 1);
-                return .{
-                    .handle = VolumePtr{ .cylinder_idx = last },
-                    .ptr = &self.cylinders_buf.items[last],
-                };
-            },
-            vol.Cone => {
-                self.cones_buf.append(vol.Cone.init()) catch unreachable;
-                const last = @intCast(u16, self.cones_buf.items.len - 1);
-                return .{
-                    .handle = VolumePtr{ .cone_idx = last },
-                    .ptr = &self.cones_buf.items[last],
-                };
-            },
+        // create a new T and append it to the appropriate buf, and create
+        // an aux data entry
+
+        var buf = switch (T) {
+            vol.Sphere => &self.spheres_buf,
+            vol.Plane => &self.planes_buf,
+            vol.Cube => &self.cubes_buf,
+            vol.Cylinder => &self.cylinders_buf,
+            vol.Cone => &self.cones_buf,
             else => unreachable,
-        }
+        };
+
+        buf.append(T.init()) catch unreachable;
+
+        const last = @intCast(u16, buf.items.len - 1);
+        const handle = switch (T) {
+            vol.Sphere => VolumePtr{ .sphere_idx = last },
+            vol.Plane => VolumePtr{ .plane_idx = last },
+            vol.Cube => VolumePtr{ .cube_idx = last },
+            vol.Cylinder => VolumePtr{ .cylinder_idx = last },
+            vol.Cone => VolumePtr{ .cone_idx = last },
+            else => unreachable,
+        };
+
+        return .{
+            .handle = handle,
+            .ptr = &buf.items[last],
+        };
     }
 
     pub fn addLight(self: *This, comptime T: type) struct { handle: LightPtr, ptr: *T } {
@@ -107,7 +92,7 @@ pub const World = struct {
         const fs = @typeInfo(vol.Sphere).Struct.fields;
         for (fs) |fd| {
             if (std.mem.eql(u8, name, fd.name)) {
-                return fd.type;
+                return *fd.type;
             }
         }
         unreachable;
@@ -123,11 +108,11 @@ pub const World = struct {
             inline else => |i| i,
         };
         return switch (std.meta.activeTag(volp)) {
-            .sphere_idx => return @field(self.spheres_buf.items[i], property),
-            .plane_idx => return @field(self.planes_buf.items[i], property),
-            .cube_idx => return @field(self.cubes_buf.items[i], property),
-            .cylinder_idx => return @field(self.cylinders_buf.items[i], property),
-            .cone_idx => return @field(self.cones_buf.items[i], property),
+            .sphere_idx => return &@field(self.spheres_buf.items[i], property),
+            .plane_idx => return &@field(self.planes_buf.items[i], property),
+            .cube_idx => return &@field(self.cubes_buf.items[i], property),
+            .cylinder_idx => return &@field(self.cylinders_buf.items[i], property),
+            .cone_idx => return &@field(self.cones_buf.items[i], property),
         };
     }
 
@@ -181,8 +166,8 @@ pub const World = struct {
         alctr: std.mem.Allocator,
         reflections_remaining: usize,
     ) Color {
-        const tfm = self.getProperty(data.intersection.vptr, "transform");
-        const mate = self.getProperty(data.intersection.vptr, "material");
+        const tfm = self.getProperty(data.intersection.vptr, "transform").*;
+        const mate = self.getProperty(data.intersection.vptr, "material").*;
 
         var color = Color.init(0, 0, 0);
         // surface color
@@ -384,6 +369,12 @@ pub const VolumePtr = union(enum) {
     cube_idx: u16,
     cylinder_idx: u16,
     cone_idx: u16,
+
+    pub fn idx(self: VolumePtr) u16 {
+        return switch (self) {
+            inline else => |i| i,
+        };
+    }
 };
 
 pub const LightPtr = union(enum) {

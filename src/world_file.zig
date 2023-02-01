@@ -3,9 +3,89 @@
 pub var error_message: ?[]const u8 = null;
 pub var error_offending_line: ?[]const u8 = null;
 
+pub const WorldParseError = error{
+    IndescribableOffense,
+};
+
+const FileSection = struct {
+    /// Reference to section of original text. Not owned by this object
+    text: []const u8,
+    vptr: ?VolumePtr = null,
+
+    pub fn header(self: This) []const u8 {
+        return std.mem.sliceTo(self.text, '\n');
+    }
+
+    pub fn name(self: This) []const u8 {
+        var split = std.mem.split(u8, self.header(), " ");
+        const shape = split.first();
+        const name_text = split.rest();
+
+        if (name_text.len > 0) return name_text;
+        return shape;
+    }
+
+    pub fn parentName(self: This) ?[]const u8 {
+        // get parent if present
+        var lines = std.mem.tokenize(u8, self.text, "\n");
+        while (lines.next()) |line| {
+            if (std.mem.startsWith(u8, line, "parent")) {
+                var split = std.mem.split(u8, line, " ");
+                _ = split.next();
+                return split.rest();
+            }
+        }
+        return null;
+    }
+
+    pub fn addObjectToWorld(self: *This, world: *World, camera: *?Camera) !void {
+        const header_text = self.header();
+
+        if (std.mem.startsWith(u8, header_text, "CAMERA")) {
+            camera.* = try parseCamera(self.text);
+        } else if (std.mem.startsWith(u8, header_text, "POINTLIGHT")) {
+            var world_light = world.addLight(PointLight);
+            var parsed_light = try parsePointLight(self.text);
+            world_light.ptr.* = parsed_light;
+            // self.vptr = world_light.handle; // TODO merge volptr and lightptr
+        } else if (std.mem.startsWith(u8, header_text, "CONE")) {
+            var world_cone = world.addVolume(Cone);
+            var parsed_cone = try parseCone(self.text);
+            world_cone.ptr.* = parsed_cone;
+            self.vptr = world_cone.handle;
+        } else if (std.mem.startsWith(u8, header_text, "SPHERE")) {
+            var world_sphere = world.addVolume(Sphere);
+            var parsed_sphere = try parseSphere(self.text);
+            world_sphere.ptr.* = parsed_sphere;
+            self.vptr = world_sphere.handle;
+        } else if (std.mem.startsWith(u8, header_text, "PLANE")) {
+            var world_plane = world.addVolume(Plane);
+            var parsed_plane = try parsePlane(self.text);
+            world_plane.ptr.* = parsed_plane;
+            self.vptr = world_plane.handle;
+        } else if (std.mem.startsWith(u8, header_text, "CUBE")) {
+            var world_cube = world.addVolume(Cube);
+            var parsed_cube = try parseCube(self.text);
+            world_cube.ptr.* = parsed_cube;
+            self.vptr = world_cube.handle;
+        } else if (std.mem.startsWith(u8, header_text, "CYLINDER")) {
+            var world_cylinder = world.addVolume(Cylinder);
+            var parsed_cylinder = try parseCylinder(self.text);
+            world_cylinder.ptr.* = parsed_cylinder;
+            self.vptr = world_cylinder.handle;
+        }
+        // std.debug.print("+ {s} ({s})\n", .{ self.name(), self.header() });
+    }
+
+    const This = @This();
+};
+
 const FileContents = struct {
     world: World,
     camera: Camera,
+    alctr: std.mem.Allocator,
+    text: []const u8,
+    sections: []FileSection,
 };
 
 pub fn parseWorldFile(filename: []const u8, alctr: std.mem.Allocator) !FileContents {
@@ -14,19 +94,167 @@ pub fn parseWorldFile(filename: []const u8, alctr: std.mem.Allocator) !FileConte
 
     // a gigabyte
     var txt = try file.readToEndAlloc(alctr, 1024 * 1024 * 1024);
-    defer alctr.free(txt);
+
+    // intentionally no defer alctr.free(txt), txt is owned by resulting FileContents
 
     return try parseWorldText(txt, alctr);
 }
 
+pub fn parseWorldText(txt: []const u8, alctr: std.mem.Allocator) !FileContents {
+    var world = World.init(alctr);
+    var camera: ?Camera = null;
+    var sections = getTextSections(txt, alctr);
+
+    // populate world
+    for (sections) |*section| {
+        try section.addObjectToWorld(&world, &camera);
+    }
+
+    // link parents/children
+    var tree = getVolumeTree(sections, alctr);
+    tree.applyTransforms(&world);
+    defer tree.deinit();
+
+    if (camera == null) return unimplementedError();
+
+    return .{
+        .world = world,
+        .camera = camera.?,
+        .alctr = alctr,
+        .text = txt,
+        .sections = sections,
+    };
+}
+
+fn getTextSections(txt: []const u8, alctr: std.mem.Allocator) []FileSection {
+    var sections = std.ArrayList(FileSection).init(alctr);
+
+    var remaining = txt;
+    var chunk_idxs = findSectionBounds(remaining);
+
+    while (chunk_idxs.min) |min| {
+        const chunk = remaining[min..chunk_idxs.max];
+
+        sections.append(FileSection{ .text = chunk }) catch unreachable;
+        // std.debug.print("p {s}\n", .{sections.items[sections.items.len - 1].header()});
+
+        if (chunk_idxs.max == remaining.len) break;
+
+        remaining = remaining[chunk_idxs.max..];
+        chunk_idxs = findSectionBounds(remaining);
+    }
+
+    return sections.toOwnedSlice() catch unreachable;
+}
+
+const VolumeTree = struct {
+    nodes: []VolumeTreeNode,
+    alctr: std.mem.Allocator,
+
+    pub fn deinit(self: *VolumeTree) void {
+        for (self.nodes) |*n| {
+            n.children_idxs.deinit();
+        }
+        self.alctr.free(self.nodes);
+    }
+
+    fn printDepthFirst(self: VolumeTree, idx: usize, level: usize) void {
+        {
+            // indent
+            var i: usize = 0;
+            while (i < level) : (i += 1) {
+                std.debug.print("  ", .{});
+            }
+        }
+
+        if (self.nodes[idx].vptr) |vptr| {
+            // print node
+            std.debug.print("{}\n", .{vptr});
+
+            // print children
+            for (self.nodes[idx].children_idxs.items) |c_idx| {
+                self.printDepthFirst(c_idx, level + 1);
+            }
+        }
+    }
+
+    pub fn print(self: VolumeTree) void {
+        for (self.nodes) |n, i| {
+            if (n.parent_idx == null) {
+                self.printDepthFirst(i, 0);
+            }
+        }
+    }
+
+    fn applyTransformsDepthFirst(self: VolumeTree, world: *World, idx: usize, parent_tform: Transform) void {
+        const vptr = self.nodes[idx].vptr.?;
+        var vol_transform = world.getProperty(vptr, "transform");
+
+        vol_transform.* = parent_tform.mult(vol_transform.*);
+
+        for (self.nodes[idx].children_idxs.items) |c_idx| {
+            self.applyTransformsDepthFirst(world, c_idx, vol_transform.*);
+        }
+    }
+
+    pub fn applyTransforms(self: VolumeTree, world: *World) void {
+        for (self.nodes) |n, i| {
+            if (n.parent_idx == null and n.vptr != null) {
+                self.applyTransformsDepthFirst(world, i, Transform{});
+            }
+        }
+    }
+};
+
+const VolumeTreeNode = struct {
+    vptr: ?VolumePtr,
+    idx: usize,
+    parent_idx: ?usize,
+    children_idxs: std.ArrayList(usize),
+};
+
+fn getVolumeTree(sections: []FileSection, alctr: std.mem.Allocator) VolumeTree {
+    var tree_nodes = alctr.alloc(VolumeTreeNode, sections.len) catch unreachable;
+
+    // initialize flat tree
+    for (sections) |s, i| {
+        const pidx: ?usize = blk: {
+            if (s.parentName()) |pname| {
+                for (sections) |ps, j| {
+                    if (std.mem.eql(u8, ps.name(), pname))
+                        break :blk j;
+                }
+                unreachable;
+            }
+            break :blk null;
+        };
+
+        tree_nodes[i] = VolumeTreeNode{
+            .vptr = s.vptr,
+            .idx = i,
+            .parent_idx = pidx,
+            .children_idxs = std.ArrayList(usize).init(alctr),
+        };
+    }
+
+    // populate children lists
+    for (tree_nodes) |tn, i| {
+        if (tn.parent_idx) |pi| {
+            tree_nodes[pi].children_idxs.append(i) catch unreachable;
+        }
+    }
+
+    return VolumeTree{
+        .nodes = tree_nodes,
+        .alctr = alctr,
+    };
+}
+
 fn findSectionBounds(txt: []const u8) struct { min: ?usize, max: usize } {
     const keys = [_][]const u8{
-        "CAMERA",
-        "POINTLIGHT",
-        "SPHERE",
-        "PLANE",
-        "CUBE",
-        "CYLINDER",
+        "CAMERA", "POINTLIGHT",
+        "SPHERE", "PLANE",
+        "CUBE",   "CYLINDER",
         "CONE",
     };
 
@@ -69,60 +297,6 @@ fn findSectionBounds(txt: []const u8) struct { min: ?usize, max: usize } {
 
     return .{ .min = min, .max = max };
 }
-
-pub fn parseWorldText(txt: []const u8, alctr: std.mem.Allocator) !FileContents {
-    var world = World.init(alctr);
-    var camera: ?Camera = null;
-
-    var remaining = txt;
-    var chunk_idxs = findSectionBounds(remaining);
-
-    while (chunk_idxs.min) |min| {
-        const chunk = remaining[min..chunk_idxs.max];
-        const header = std.mem.sliceTo(chunk, '\n');
-        if (std.mem.startsWith(u8, header, "CAMERA")) {
-            camera = try parseCamera(chunk);
-        } else if (std.mem.startsWith(u8, header, "POINTLIGHT")) {
-            var world_light = world.addLight(PointLight);
-            var parsed_light = try parsePointLight(chunk);
-            world_light.ptr.* = parsed_light;
-        } else if (std.mem.startsWith(u8, header, "CONE")) {
-            var world_cone = world.addVolume(Cone);
-            var parsed_cone = try parseCone(chunk);
-            world_cone.ptr.* = parsed_cone;
-        } else if (std.mem.startsWith(u8, header, "SPHERE")) {
-            var world_sphere = world.addVolume(Sphere);
-            var parsed_sphere = try parseSphere(chunk);
-            world_sphere.ptr.* = parsed_sphere;
-        } else if (std.mem.startsWith(u8, header, "PLANE")) {
-            var world_plane = world.addVolume(Plane);
-            var parsed_plane = try parsePlane(chunk);
-            world_plane.ptr.* = parsed_plane;
-        } else if (std.mem.startsWith(u8, header, "CUBE")) {
-            var world_cube = world.addVolume(Cube);
-            var parsed_cube = try parseCube(chunk);
-            world_cube.ptr.* = parsed_cube;
-        } else if (std.mem.startsWith(u8, header, "CYLINDER")) {
-            var world_cylinder = world.addVolume(Cylinder);
-            var parsed_cylinder = try parseCylinder(chunk);
-            world_cylinder.ptr.* = parsed_cylinder;
-        }
-        std.debug.print("+ {s}\n", .{header});
-
-        if (chunk_idxs.max == remaining.len) break;
-
-        remaining = remaining[chunk_idxs.max..];
-        chunk_idxs = findSectionBounds(remaining);
-    }
-
-    if (camera == null) return unimplementedError();
-
-    return .{ .world = world, .camera = camera.? };
-}
-
-pub const WorldParseError = error{
-    IndescribableOffense,
-};
 
 fn unimplementedError() WorldParseError {
     error_message = "Unknown";
@@ -920,6 +1094,7 @@ test "parse world (1)" {
 
     const alctr = std.testing.allocator;
     const file = try parseWorldText(txt, alctr);
+    defer alctr.free(file.sections);
     const world = &file.world;
     const camera = &file.camera;
     defer world.deinit();
@@ -953,6 +1128,7 @@ test "parse world (2)" {
 
     const alctr = std.testing.allocator;
     const file = try parseWorldText(txt, alctr);
+    defer alctr.free(file.sections);
     const world = &file.world;
     const camera = &file.camera;
     defer world.deinit();
@@ -988,6 +1164,7 @@ test "parse world (3)" {
 
     const alctr = std.testing.allocator;
     const file = try parseWorldText(txt, alctr);
+    defer alctr.free(file.sections);
     const world = &file.world;
     const camera = &file.camera;
     defer world.deinit();
@@ -997,11 +1174,223 @@ test "parse world (3)" {
     try exEq(@as(i64, 300), camera.height);
 }
 
+test "parse parents: parser parses names and parent names" {
+    const txt =
+        \\CAMERA
+        \\width 300
+        \\height 300
+        \\fov pi/2.5
+        \\from (0,1,-4)
+        \\to (0,1,0)
+        \\up (0,1,0)
+        \\
+        \\CONE name 1
+        \\max 1
+        \\min 0
+        \\closed false
+        \\
+        \\CONE
+        \\max 1
+        \\min 0
+        \\closed false
+        \\
+        \\SPHERE midlevel
+        \\parent name 1
+        \\
+        \\SPHERE
+        \\parent midlevel
+    ;
+
+    const alctr = std.testing.allocator;
+    const file = try parseWorldText(txt, alctr);
+    defer alctr.free(file.sections);
+    const world = &file.world;
+    defer world.deinit();
+
+    try exEq(@as(usize, 5), file.sections.len);
+
+    try exEqStr("CAMERA", std.mem.sliceTo(file.sections[0].name(), 0));
+    try exEq(@as(?[]const u8, null), file.sections[0].parentName());
+
+    try exEqStr("name 1", std.mem.sliceTo(file.sections[1].name(), 0));
+    try exEq(@as(?[]const u8, null), file.sections[1].parentName());
+
+    try exEqStr("CONE", std.mem.sliceTo(file.sections[2].name(), 0));
+    try exEq(@as(?[]const u8, null), file.sections[2].parentName());
+
+    try exEqStr("midlevel", std.mem.sliceTo(file.sections[3].name(), 0));
+    try ex(file.sections[3].parentName() != null);
+    try exEqStr("name 1", std.mem.sliceTo(file.sections[3].parentName().?, 0));
+
+    try exEqStr("SPHERE", std.mem.sliceTo(file.sections[4].name(), 0));
+    try ex(file.sections[4].parentName() != null);
+    try exEqStr("midlevel", std.mem.sliceTo(file.sections[4].parentName().?, 0));
+}
+
+test "parse parents: parser parses vptrs" {
+    const txt =
+        \\CAMERA
+        \\width 300
+        \\height 300
+        \\fov pi/2.5
+        \\from (0,1,-4)
+        \\to (0,1,0)
+        \\up (0,1,0)
+        \\
+        \\SPHERE
+        \\PLANE
+        \\CUBE
+        \\CYLINDER
+        \\CONE
+    ;
+
+    const alctr = std.testing.allocator;
+    const file = try parseWorldText(txt, alctr);
+    defer alctr.free(file.sections);
+    const world = &file.world;
+    defer world.deinit();
+
+    try exEq(@as(usize, 6), file.sections.len);
+
+    try exEq(VolumePtr{ .sphere_idx = 0 }, file.sections[1].vptr.?);
+    try exEq(VolumePtr{ .plane_idx = 0 }, file.sections[2].vptr.?);
+    try exEq(VolumePtr{ .cube_idx = 0 }, file.sections[3].vptr.?);
+    try exEq(VolumePtr{ .cylinder_idx = 0 }, file.sections[4].vptr.?);
+    try exEq(VolumePtr{ .cone_idx = 0 }, file.sections[5].vptr.?);
+}
+
+test "parse parents: parser applies transforms: translation" {
+    const txt =
+        \\CAMERA
+        \\width 300
+        \\height 300
+        \\fov pi/2.5
+        \\from (0,1,-4)
+        \\to (0,1,0)
+        \\up (0,1,0)
+        \\
+        \\CONE gem bottom
+        \\max 1
+        \\min 0
+        \\closed false
+        \\transform translate (1,0,0)
+        \\
+        \\CONE gem top
+        \\max 1
+        \\min 0
+        \\closed false
+        \\transform translate (0,2,0)
+        \\parent gem bottom
+    ;
+
+    const alctr = std.testing.allocator;
+    const file = try parseWorldText(txt, alctr);
+    defer alctr.free(file.sections);
+    const world = &file.world;
+    defer world.deinit();
+
+    try exEq(@as(usize, 2), world.cones_buf.items.len);
+
+    // assuming that they are added to the world in order...
+
+    errdefer tprint(world.cones_buf.items[1].transform.t);
+    errdefer tprint(world.cones_buf.items[0].transform.t);
+
+    try ex(world.cones_buf.items[0].transform.t.equals(trans.makeTranslation(1, 0, 0).t));
+    // test that the top was moved along with the bottom
+    try ex(world.cones_buf.items[1].transform.t.equals(trans.makeTranslation(1, 2, 0).t));
+}
+
+test "parse parents: parser applies transforms: rotation" {
+    const txt =
+        \\CAMERA
+        \\scale 1
+        \\width 12
+        \\height 12
+        \\fov pi/2.5
+        \\from (-0.2,3.25,-10)
+        \\to (-0.2,1.75,0)
+        \\up (0,1,0)
+        \\
+        \\SPHERE origin
+        \\transform scale (0.5,0.5,0.5)
+        \\transform rotate z pi/2
+        \\
+        \\SPHERE right
+        \\transform translate (3,0,0)
+        \\parent origin
+        \\
+        \\SPHERE
+        \\transform translate (0,3,0)
+        \\parent origin
+        \\
+        \\SPHERE
+        \\transform translate (0,3,0)
+        \\parent right
+    ;
+
+    const alctr = std.testing.allocator;
+    const file = try parseWorldText(txt, alctr);
+    defer alctr.free(file.sections);
+    const world = &file.world;
+    defer world.deinit();
+
+    try exEq(@as(usize, 4), world.spheres_buf.items.len);
+
+    // assuming that they are added to the world in order...
+
+    errdefer {
+        tprint(world.spheres_buf.items[0].transform.t);
+        tprint(world.spheres_buf.items[1].transform.t);
+        tprint(world.spheres_buf.items[2].transform.t);
+        tprint(world.spheres_buf.items[3].transform.t);
+    }
+
+    const identity = trans.Transform{};
+
+    {
+        const test_t_1 =
+            identity.chain(.{
+            trans.makeRotationZ(PI / 2.0),
+            trans.makeScaling(0.5, 0.5, 0.5),
+        }).t;
+        try ex(world.spheres_buf.items[0].transform.t.equals(test_t_1));
+    }
+
+    {
+        const test_t_2 = identity.chain(.{
+            trans.makeTranslation(0, 1.5, 0),
+            trans.makeScaling(0.5, 0.5, 0.5),
+            trans.makeRotationZ(PI / 2.0),
+        }).t;
+        try ex(world.spheres_buf.items[1].transform.t.equals(test_t_2));
+    }
+
+    {
+        const test_t_3 = identity.chain(.{
+            trans.makeTranslation(-1.5, 0, 0),
+            trans.makeRotationZ(PI / 2.0),
+            trans.makeScaling(0.5, 0.5, 0.5),
+        }).t;
+        try ex(world.spheres_buf.items[2].transform.t.equals(test_t_3));
+    }
+
+    {
+        const test_t_4 = identity.chain(.{
+            trans.makeTranslation(-1.5, 1.5, 0),
+            trans.makeRotationZ(PI / 2.0),
+            trans.makeScaling(0.5, 0.5, 0.5),
+        }).t;
+        try ex(world.spheres_buf.items[3].transform.t.equals(test_t_4));
+    }
+}
+
 const std = @import("std");
 const trans = @import("transform.zig");
 const mate = @import("material.zig");
 
 const PI = std.math.pi;
+const exEqStr = std.testing.expectEqualStrings;
 const exEq = std.testing.expectEqual;
 const ex = std.testing.expect;
 const tprint = @import("u.zig").print;
@@ -1020,3 +1409,5 @@ const Plane = @import("volume.zig").Plane;
 const Sphere = @import("volume.zig").Sphere;
 const Cylinder = @import("volume.zig").Cylinder;
 const Cone = @import("volume.zig").Cone;
+
+const VolumePtr = @import("world.zig").VolumePtr;
