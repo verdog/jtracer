@@ -10,6 +10,7 @@ pub const World = struct {
             .cubes_buf = std.ArrayList(vol.Cube).init(alctr),
             .cylinders_buf = std.ArrayList(vol.Cylinder).init(alctr),
             .cones_buf = std.ArrayList(vol.Cone).init(alctr),
+            .triangles_buf = std.ArrayList(vol.Triangle).init(alctr),
             .lights_buf = std.ArrayList(PointLight).init(alctr),
         };
     }
@@ -20,12 +21,12 @@ pub const World = struct {
         self.cubes_buf.deinit();
         self.cylinders_buf.deinit();
         self.cones_buf.deinit();
+        self.triangles_buf.deinit();
         self.lights_buf.deinit();
     }
 
     pub fn addVolume(self: *This, comptime T: type) struct { handle: VolumePtr, ptr: *T } {
-        // create a new T and append it to the appropriate buf, and create
-        // an aux data entry
+        // create a new T and append it to the appropriate buf
 
         var buf = switch (T) {
             vol.Sphere => &self.spheres_buf,
@@ -33,10 +34,18 @@ pub const World = struct {
             vol.Cube => &self.cubes_buf,
             vol.Cylinder => &self.cylinders_buf,
             vol.Cone => &self.cones_buf,
+            vol.Triangle => &self.triangles_buf,
             else => unreachable,
         };
 
-        buf.append(T.init()) catch unreachable;
+        switch (T) {
+            vol.Triangle => buf.append(T.init(
+                Point.init(0, 0, 0),
+                Point.init(0, 1, 0),
+                Point.init(1, 0, 0),
+            )) catch unreachable,
+            else => buf.append(T.init()) catch unreachable,
+        }
 
         const last = @intCast(u16, buf.items.len - 1);
         const handle = switch (T) {
@@ -45,6 +54,7 @@ pub const World = struct {
             vol.Cube => VolumePtr{ .cube_idx = last },
             vol.Cylinder => VolumePtr{ .cylinder_idx = last },
             vol.Cone => VolumePtr{ .cone_idx = last },
+            vol.Triangle => VolumePtr{ .triangle_idx = last },
             else => unreachable,
         };
 
@@ -113,6 +123,7 @@ pub const World = struct {
             .cube_idx => return &@field(self.cubes_buf.items[i], property),
             .cylinder_idx => return &@field(self.cylinders_buf.items[i], property),
             .cone_idx => return &@field(self.cones_buf.items[i], property),
+            .triangle_idx => return &@field(self.triangles_buf.items[i], property),
         };
     }
 
@@ -156,6 +167,11 @@ pub const World = struct {
 
         for (self.cones_buf.items) |*ptr, i| {
             const vptr = VolumePtr{ .cone_idx = @intCast(u16, i) };
+            ixs.intersect(ptr.*, vptr, ray);
+        }
+
+        for (self.triangles_buf.items) |*ptr, i| {
+            const vptr = VolumePtr{ .triangle_idx = @intCast(u16, i) };
             ixs.intersect(ptr.*, vptr, ray);
         }
     }
@@ -265,6 +281,7 @@ pub const World = struct {
                 .cube_idx => self.cubes_buf.items[hit.idx()].normalAt(ray.position(hit.t)),
                 .cylinder_idx => self.cylinders_buf.items[hit.idx()].normalAt(ray.position(hit.t)),
                 .cone_idx => self.cones_buf.items[hit.idx()].normalAt(ray.position(hit.t)),
+                .triangle_idx => self.triangles_buf.items[hit.idx()].normalAt(ray.position(hit.t)),
             };
 
             const bounds = ixs.findBoundaryObjects(hit);
@@ -293,6 +310,7 @@ pub const World = struct {
     cubes_buf: std.ArrayList(vol.Cube),
     cylinders_buf: std.ArrayList(vol.Cylinder),
     cones_buf: std.ArrayList(vol.Cone),
+    triangles_buf: std.ArrayList(vol.Triangle),
     lights_buf: std.ArrayList(PointLight),
 
     const This = @This();
@@ -369,6 +387,7 @@ pub const VolumePtr = union(enum) {
     cube_idx: u16,
     cylinder_idx: u16,
     cone_idx: u16,
+    triangle_idx: u16,
 
     pub fn idx(self: VolumePtr) u16 {
         return switch (self) {
@@ -417,10 +436,7 @@ test "World: add/get sphere" {
     var world = World.init(alctr);
     defer world.deinit();
 
-    const new = world.addVolume(vol.Sphere);
-    var sphereptr = new.ptr;
-
-    try expect(sphereptr.id != 0);
+    _ = world.addVolume(vol.Sphere);
 }
 
 test "The test world" {

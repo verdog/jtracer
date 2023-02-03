@@ -73,6 +73,11 @@ const FileSection = struct {
             var parsed_cylinder = try parseCylinder(self.text);
             world_cylinder.ptr.* = parsed_cylinder;
             self.vptr = world_cylinder.handle;
+        } else if (std.mem.startsWith(u8, header_text, "TRIANGLE")) {
+            var world_triangle = world.addVolume(Triangle);
+            var parsed_triangle = try parseTriangle(self.text);
+            world_triangle.ptr.* = parsed_triangle;
+            self.vptr = world_triangle.handle;
         }
         // std.debug.print("+ {s} ({s})\n", .{ self.name(), self.header() });
     }
@@ -255,7 +260,7 @@ fn findSectionBounds(txt: []const u8) struct { min: ?usize, max: usize } {
         "CAMERA", "POINTLIGHT",
         "SPHERE", "PLANE",
         "CUBE",   "CYLINDER",
-        "CONE",
+        "CONE",   "TRIANGLE",
     };
 
     var keys_idxs = [_]?usize{null} ** keys.len;
@@ -681,6 +686,42 @@ fn parseCone(txt: []const u8) !Cone {
     }
 
     return cone;
+}
+
+fn parseTriangle(txt: []const u8) !Triangle {
+    var p1: ?@"3Tuple" = null;
+    var p2: ?@"3Tuple" = null;
+    var p3: ?@"3Tuple" = null;
+    var mat = Material.init();
+    var transf = Transform{};
+
+    {
+        var lines = std.mem.tokenize(u8, txt, "\n");
+        while (lines.next()) |line| {
+            if (std.mem.startsWith(u8, line, "material")) {
+                try parseAndApplyMaterial(line, &mat);
+            } else if (std.mem.startsWith(u8, line, "transform")) {
+                try parseAndApplyTransform(line, &transf);
+            } else if (std.mem.startsWith(u8, line, "p1")) {
+                p1 = try parse3Tuple(line[3..]);
+            } else if (std.mem.startsWith(u8, line, "p2")) {
+                p2 = try parse3Tuple(line[3..]);
+            } else if (std.mem.startsWith(u8, line, "p3")) {
+                p3 = try parse3Tuple(line[3..]);
+            }
+        }
+    }
+
+    if (p1 == null or p2 == null or p3 == null) return unimplementedError();
+
+    var tri = Triangle.init(
+        Point.init(p1.?.a, p1.?.b, p1.?.c),
+        Point.init(p2.?.a, p2.?.b, p2.?.c),
+        Point.init(p3.?.a, p3.?.b, p3.?.c),
+    );
+    tri.transform = transf;
+    tri.material = mat;
+    return tri;
 }
 
 test "parse camera" {
@@ -1160,6 +1201,10 @@ test "parse world (3)" {
         \\CUBE
         \\CUBE
         \\CUBE
+        \\TRIANGLE
+        \\p1 (0,0,0)
+        \\p2 (1,0,0)
+        \\p3 (0,1,0)
     ;
 
     const alctr = std.testing.allocator;
@@ -1170,6 +1215,7 @@ test "parse world (3)" {
     defer world.deinit();
 
     try exEq(@as(usize, 3), world.cubes_buf.items.len);
+    try exEq(@as(usize, 1), world.triangles_buf.items.len);
     try exEq(@as(i64, 300), camera.width);
     try exEq(@as(i64, 300), camera.height);
 }
@@ -1385,6 +1431,28 @@ test "parse parents: parser applies transforms: rotation" {
     }
 }
 
+test "Parse triangle" {
+    const txt =
+        \\TRIANGLE
+        \\p1 (0,0,0)
+        \\p2 (1,0,0)
+        \\p3 (1,1,0)
+        \\transform translate (0,2,0)
+    ;
+
+    const tri = try parseTriangle(txt);
+
+    try ex(tri.p1.equals(Point.init(0, 0, 0)));
+    try ex(tri.p2.equals(Point.init(1, 0, 0)));
+    try ex(tri.p3.equals(Point.init(1, 1, 0)));
+
+    // chain applies transforms in reverse order
+    const t = (trans.Transform{}).chain(.{
+        trans.makeTranslation(0, 2, 0),
+    });
+    try ex(tri.transform.t.equals(t.t));
+}
+
 const std = @import("std");
 const trans = @import("transform.zig");
 const mate = @import("material.zig");
@@ -1395,6 +1463,7 @@ const exEq = std.testing.expectEqual;
 const ex = std.testing.expect;
 const tprint = @import("u.zig").print;
 
+const Tuple = @import("tuple.zig").Tuple;
 const Point = @import("tuple.zig").Point;
 const Vector = @import("tuple.zig").Vector;
 const Color = @import("color.zig").Color;
@@ -1409,5 +1478,6 @@ const Plane = @import("volume.zig").Plane;
 const Sphere = @import("volume.zig").Sphere;
 const Cylinder = @import("volume.zig").Cylinder;
 const Cone = @import("volume.zig").Cone;
+const Triangle = @import("volume.zig").Triangle;
 
 const VolumePtr = @import("world.zig").VolumePtr;

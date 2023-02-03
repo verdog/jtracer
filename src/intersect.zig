@@ -167,6 +167,10 @@ pub const Intersections = struct {
                 std.debug.assert(std.meta.activeTag(vptr) == .cone_idx);
                 self.intersectCone(vptr, volu, ray);
             },
+            vol.Triangle => {
+                std.debug.assert(std.meta.activeTag(vptr) == .triangle_idx);
+                self.intersectTriangle(vptr, volu, ray);
+            },
             else => unreachable,
         }
     }
@@ -347,6 +351,28 @@ pub const Intersections = struct {
             if (checkCap(td_ray, t, @fabs(cone.max)))
                 self.ixs.append(Intersection.init(t, vptr)) catch @panic("OOM");
         }
+    }
+
+    fn intersectTriangle(self: *This, vptr: VolPtr, tri: vol.Triangle, ray: Ray) void {
+        const td_ray = ray.transformed(tri.transform.inverse);
+
+        const dir_x_e2 = td_ray.direction.cross(tri.e2);
+        const det = tri.e1.dot(dir_x_e2);
+
+        // miss checks
+        if (@fabs(det) < mymath.floatTolerance) return; // td_ray is parallel
+
+        const f = 1.0 / det;
+        const p1_to_origin = td_ray.origin.minus(tri.p1);
+        const u = f * p1_to_origin.dot(dir_x_e2);
+        if (u < 0 or u > 1) return; // misses over p1-p3 edge
+
+        const origin_cross_e1 = p1_to_origin.cross(tri.e1);
+        const v = f * td_ray.direction.dot(origin_cross_e1);
+        if (v < 0 or u + v > 1) return; // misses over p1-p2 or p2-p3 edge
+
+        // a hit
+        self.ixs.append(Intersection.init(f * tri.e2.dot(origin_cross_e1), vptr)) catch @panic("OOM");
     }
 
     pub fn clear(self: *This) void {
@@ -1052,6 +1078,97 @@ test "Intersecting a cone's end caps" {
     try tst(Ray.init(Point.init(0, 0, -0.25), Vector.init(0, 1, 1).normalized()), 2);
     // vertical, 2 borders 2 caps
     try tst(Ray.init(Point.init(0, 0, -0.25), Vector.init(0, 1, 0).normalized()), 4);
+}
+
+test "Intersecting a ray parallel to a triangle should miss" {
+    const p1 = Point.init(0, 1, 0);
+    const p2 = Point.init(-1, 0, 0);
+    const p3 = Point.init(1, 0, 0);
+
+    const t = vol.Triangle.init(p1, p2, p3);
+
+    const tptr = VolPtr{ .triangle_idx = 0 };
+    const r = Ray.init(Point.init(0, -1, -2), Vector.init(0, 1, 0));
+
+    var xs = Intersections.init(std.testing.allocator, .{});
+    defer xs.deinit();
+
+    xs.intersect(t, tptr, r);
+
+    try expect(xs.ixs.items.len == 0);
+}
+
+test "A ray misses the p1-p3 edge of a triangle" {
+    const p1 = Point.init(0, 1, 0);
+    const p2 = Point.init(-1, 0, 0);
+    const p3 = Point.init(1, 0, 0);
+
+    const t = vol.Triangle.init(p1, p2, p3);
+
+    const tptr = VolPtr{ .triangle_idx = 0 };
+    const r = Ray.init(Point.init(1, 1, -2), Vector.init(0, 0, 1));
+
+    var xs = Intersections.init(std.testing.allocator, .{});
+    defer xs.deinit();
+
+    xs.intersect(t, tptr, r);
+
+    try expect(xs.ixs.items.len == 0);
+}
+
+test "A ray misses the p1-p2 edge of a triangle" {
+    const p1 = Point.init(0, 1, 0);
+    const p2 = Point.init(-1, 0, 0);
+    const p3 = Point.init(1, 0, 0);
+
+    const t = vol.Triangle.init(p1, p2, p3);
+
+    const tptr = VolPtr{ .triangle_idx = 0 };
+    const r = Ray.init(Point.init(-1, 1, -2), Vector.init(0, 0, 1));
+
+    var xs = Intersections.init(std.testing.allocator, .{});
+    defer xs.deinit();
+
+    xs.intersect(t, tptr, r);
+
+    try expect(xs.ixs.items.len == 0);
+}
+
+test "A ray misses the p2-p3 edge of a triangle" {
+    const p1 = Point.init(0, 1, 0);
+    const p2 = Point.init(-1, 0, 0);
+    const p3 = Point.init(1, 0, 0);
+
+    const t = vol.Triangle.init(p1, p2, p3);
+
+    const tptr = VolPtr{ .triangle_idx = 0 };
+    const r = Ray.init(Point.init(0, -1, -2), Vector.init(0, 0, 1));
+
+    var xs = Intersections.init(std.testing.allocator, .{});
+    defer xs.deinit();
+
+    xs.intersect(t, tptr, r);
+
+    try expect(xs.ixs.items.len == 0);
+}
+
+test "A ray hits a triangle" {
+    const p1 = Point.init(0, 1, 0);
+    const p2 = Point.init(-1, 0, 0);
+    const p3 = Point.init(1, 0, 0);
+
+    const t = vol.Triangle.init(p1, p2, p3);
+
+    const tptr = VolPtr{ .triangle_idx = 0 };
+    const r = Ray.init(Point.init(0, 0.5, -2), Vector.init(0, 0, 1));
+
+    var xs = Intersections.init(std.testing.allocator, .{});
+    defer xs.deinit();
+
+    xs.intersect(t, tptr, r);
+
+    try expect(xs.ixs.items.len == 1);
+    try expect(xs.ixs.items[0].t == 2);
 }
 
 const std = @import("std");

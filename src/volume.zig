@@ -1,20 +1,13 @@
 //! definitions of volumes that can be placed in a scene
 
 pub const Sphere = struct {
-    var next_id: u16 = 1;
-
-    id: u16,
     transform: trans.Transform,
 
     // TODO make this field more data-oriented
     material: Material,
 
     pub fn init() This {
-        const id = This.next_id;
-        This.next_id += 1;
-
         return .{
-            .id = id,
             .transform = trans.Transform{},
             .material = Material.init(),
         };
@@ -225,6 +218,49 @@ pub const Cone = struct {
     const This = @This();
 };
 
+pub const Triangle = struct {
+    p1: Tuple,
+    p2: Tuple,
+    p3: Tuple,
+    e1: Tuple,
+    e2: Tuple,
+    normal: Tuple,
+
+    transform: trans.Transform,
+    material: Material,
+
+    pub fn init(p1: Tuple, p2: Tuple, p3: Tuple) This {
+        std.debug.assert(p1.isPoint());
+        std.debug.assert(p2.isPoint());
+        std.debug.assert(p3.isPoint());
+
+        const e1 = p2.minus(p1);
+        const e2 = p3.minus(p1);
+
+        std.debug.assert(e1.isVector());
+        std.debug.assert(e2.isVector());
+
+        return .{
+            .p1 = p1,
+            .p2 = p2,
+            .p3 = p3,
+            .e1 = e1,
+            .e2 = e2,
+            .normal = e2.cross(e1).normalized(),
+            .transform = trans.Transform{},
+            .material = Material.init(),
+        };
+    }
+
+    pub fn normalAt(self: This, world_space_point: Tuple) Tuple {
+        // normal is the same everywhere
+        _ = world_space_point;
+        return self.transform.t.mult(self.normal).normalized();
+    }
+
+    const This = @This();
+};
+
 test "The normal of a plane is constant everywhere" {
     const p = Plane.init();
 
@@ -324,14 +360,6 @@ test "The normal on a scaled cube" {
     try tst(Point.init(0.5, 0.3, -0.2), Vector.init(1, 0, 0));
     try tst(Point.init(0.24, -1, 0.09), Vector.init(0, -1, 0));
     try tst(Point.init(-0.4, 0.3, 0.5), Vector.init(0, 0, 1));
-}
-
-test "Spheres have unique ids" {
-    // TODO this is unused so far
-    const s1 = Sphere.init();
-    const s2 = Sphere.init();
-
-    try expect(s1.id != s2.id);
 }
 
 test "Sphere's have a default transform" {
@@ -549,6 +577,33 @@ test "The normal of a cone" {
     try tst(Point.init(0.5, 2, 0.5), Vector.init(0, 1, 0));
     try tst(Point.init(-0.5, -2, -0.5), Vector.init(0, -1, 0));
     try tst(Point.init(0, -2, 1.99), Vector.init(0, -1, 0));
+}
+
+test "Constructing a triangle" {
+    const p1 = Point.init(0, 1, 0);
+    const p2 = Point.init(-1, 0, 0);
+    const p3 = Point.init(1, 0, 0);
+
+    const t = Triangle.init(p1, p2, p3);
+
+    try expect(t.p1.equals(p1));
+    try expect(t.p2.equals(p2));
+    try expect(t.p3.equals(p3));
+    try expect(t.e1.equals(Vector.init(-1, -1, 0)));
+    try expect(t.e2.equals(Vector.init(1, -1, 0)));
+    try expect(t.normal.equals(Vector.init(0, 0, -1)));
+}
+
+test "The normal vector on a triangle is the same everywhere" {
+    const p1 = Point.init(0, 1, 0);
+    const p2 = Point.init(-1, 0, 0);
+    const p3 = Point.init(1, 0, 0);
+
+    const t = Triangle.init(p1, p2, p3);
+
+    try expect(t.normalAt(Point.init(0, 0.5, 0)).equals(t.normal));
+    try expect(t.normalAt(Point.init(-0.5, 0.75, 0)).equals(t.normal));
+    try expect(t.normalAt(Point.init(0.5, 0.25, 0)).equals(t.normal));
 }
 
 const std = @import("std");
