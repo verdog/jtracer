@@ -1,0 +1,44 @@
+CAMERA
+scale 1
+width 1200
+height 1200
+fov pi/2.5
+from (-0.2,3.25,-10)
+to (-0.2,1.75,0)
+up (0,1,0)
+
+POINTLIGHT
+position (-4,10,-5)
+intensity (1,1,1)
+
+SPHERE origin
+transform scale (0.5,0.5,0.5)
+transform rotate z pi/2
+material 3dchecker (0.5,0.5,0.5) (0.25,0.25,0.25)
+material transform scale (2,2,2)
+
+SPHERE right
+transform translate (3,0,0)
+material 3dchecker (0.5,0.5,0.5) (0.25,0.25,0.25)
+material transform scale (2,2,2)
+parent origin
+
+SPHERE
+transform translate (0,3,0)
+material 3dchecker (0.5,0.5,0.5) (0.25,0.25,0.25)
+material transform scale (2,2,2)
+parent origin
+
+SPHERE
+transform translate (0,3,0)
+material 3dchecker (0.5,0.5,0.5) (0.25,0.25,0.25)
+material transform scale (2,2,2)
+parent right
+
+PLANE floor
+material 3dchecker (0.5,0.5,0.5) (0.25,0.25,0.25)
+material specular 0.1
+material diffuse 1
+material reflective 0.12
+material transform translate (0.5,0,0.5)
+material transform scale (8,8,8)

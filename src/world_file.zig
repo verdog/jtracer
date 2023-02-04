@@ -93,6 +93,114 @@ const FileContents = struct {
     sections: []FileSection,
 };
 
+const ParsedObj = struct {
+    ignored_lines: usize,
+    vertices: []Tuple,
+    triangles: []Triangle,
+    alctr: std.mem.Allocator,
+
+    pub fn init(txt: []const u8, alctr: std.mem.Allocator) !This {
+        var lines = std.mem.tokenize(u8, txt, "\n\r");
+
+        var ignored_lines: usize = 0;
+        var verts = std.ArrayList(Tuple).init(alctr);
+        var tris = std.ArrayList(Triangle).init(alctr);
+
+        while (lines.next()) |line| {
+            // std.debug.print("/{s}/\n", .{line});
+            if (std.mem.startsWith(u8, line, "v ")) {
+                var nums = std.mem.tokenize(u8, line, " ");
+                _ = nums.next(); // "v"
+
+                const p1_txt = nums.next() orelse return unimplementedError();
+                const p2_txt = nums.next() orelse return unimplementedError();
+                const p3_txt = nums.next() orelse return unimplementedError();
+
+                // std.debug.print("/{s}/{s}/{s}/\n", .{ p1_txt, p2_txt, p3_txt });
+                const p1 = try std.fmt.parseFloat(f64, p1_txt);
+                const p2 = try std.fmt.parseFloat(f64, p2_txt);
+                const p3 = try std.fmt.parseFloat(f64, p3_txt);
+
+                try verts.append(Point.init(p1, p2, p3));
+            } else if (std.mem.startsWith(u8, line, "f ")) {
+                const data = line[2..];
+                var nums = std.mem.tokenize(u8, data, " ");
+
+                // f commands can have between 3 and inf vertices (where > 3 is describing
+                // a more complex polygon). we fan triangulate them for the renderer.
+
+                const p1_idx_txt = nums.next() orelse return unimplementedError();
+                const p1_idc = try parseVertex(p1_idx_txt);
+                const p1_v_idx = p1_idc.vertex_idx;
+
+                var p2_idx_txt = nums.next() orelse return unimplementedError();
+                var p2_idc = try parseVertex(p2_idx_txt);
+                var p2_v_idx = p2_idc.vertex_idx;
+
+                var p3_idx_txt_maybe = nums.next();
+
+                while (p3_idx_txt_maybe) |p3_idx_txt| {
+                    var p3_idc = try parseVertex(p3_idx_txt);
+                    var p3_v_idx = p3_idc.vertex_idx;
+
+                    try tris.append(Triangle.init(
+                        verts.items[p1_v_idx],
+                        verts.items[p2_v_idx],
+                        verts.items[p3_v_idx],
+                    ));
+
+                    // get next idx in the case of > 3 points
+                    p2_v_idx = p3_v_idx;
+                    p3_idx_txt_maybe = nums.next();
+                }
+            } else {
+                // std.debug.print("Ignored line: \"{s}\"", .{line});
+                ignored_lines += 1;
+            }
+        }
+
+        return This{
+            .ignored_lines = ignored_lines,
+            .vertices = try verts.toOwnedSlice(),
+            .triangles = try tris.toOwnedSlice(),
+            .alctr = alctr,
+        };
+    }
+
+    fn parseVertex(txt: []const u8) !struct {
+        vertex_idx: usize,
+        normal_idx: usize, // TODO
+    } {
+        // the data in f commands can come in a few forms:
+        //   f 1 2 3
+        //   f 1/2/3 4/5/6 7/8/9
+        //   f 1//3 4//6 7//9
+        //
+        //   in the slash cases, the first number is the vertex index,
+        //   the second is the texture vertex index (unused in this renderer),
+        //   the third is the vertex normal index (TODO).
+
+        var items = std.mem.split(u8, txt, "/");
+
+        const item_1_txt = items.next() orelse return unimplementedError();
+        _ = items.next(); // second item unused in this renderer
+        const item_3_txt = items.next();
+
+        return .{
+            // .obj files are 1-indexed, so we subtract 1 from the parsed idx
+            .vertex_idx = try std.fmt.parseInt(usize, item_1_txt, 10) - 1,
+            .normal_idx = try std.fmt.parseInt(usize, item_3_txt orelse "1", 10) - 1,
+        };
+    }
+
+    pub fn deinit(self: *This) void {
+        self.alctr.free(self.vertices);
+        self.alctr.free(self.triangles);
+    }
+
+    const This = @This();
+};
+
 pub fn parseWorldFile(filename: []const u8, alctr: std.mem.Allocator) !FileContents {
     var file = try std.fs.cwd().openFile(filename, .{});
     defer file.close();
@@ -105,6 +213,17 @@ pub fn parseWorldFile(filename: []const u8, alctr: std.mem.Allocator) !FileConte
     return try parseWorldText(txt, alctr);
 }
 
+pub fn parseObjFile(filename: []const u8, alctr: std.mem.Allocator) !ParsedObj {
+    var file = try std.fs.cwd().openFile(filename, .{});
+    defer file.close();
+
+    // a gigabyte
+    var txt = try file.readToEndAlloc(alctr, 1024 * 1024 * 1024);
+    defer alctr.free(txt);
+
+    return try parseObj(txt, alctr);
+}
+
 pub fn parseWorldText(txt: []const u8, alctr: std.mem.Allocator) !FileContents {
     var world = World.init(alctr);
     var camera: ?Camera = null;
@@ -112,7 +231,27 @@ pub fn parseWorldText(txt: []const u8, alctr: std.mem.Allocator) !FileContents {
 
     // populate world
     for (sections) |*section| {
-        try section.addObjectToWorld(&world, &camera);
+        // XXX: this should be collapsed into addObjectToWorld somehow
+        if (std.mem.startsWith(u8, section.header(), "OBJ ")) {
+            // handle obj file
+            var tokens = std.mem.tokenize(u8, section.header(), " ");
+            _ = tokens.next(); // "OBJ"
+            const filename = tokens.next() orelse return unimplementedError();
+            var obj = try parseObjFile(filename, alctr);
+            defer obj.deinit();
+
+            // create parent object
+            // TODO
+
+            // add each triangle
+            for (obj.triangles) |tri| {
+                var world_triangle = world.addVolume(Triangle);
+                world_triangle.ptr.* = tri;
+            }
+        } else {
+            // single object
+            try section.addObjectToWorld(&world, &camera);
+        }
     }
 
     // link parents/children
@@ -261,6 +400,7 @@ fn findSectionBounds(txt: []const u8) struct { min: ?usize, max: usize } {
         "SPHERE", "PLANE",
         "CUBE",   "CYLINDER",
         "CONE",   "TRIANGLE",
+        "OBJ",
     };
 
     var keys_idxs = [_]?usize{null} ** keys.len;
@@ -722,6 +862,10 @@ fn parseTriangle(txt: []const u8) !Triangle {
     tri.transform = transf;
     tri.material = mat;
     return tri;
+}
+
+fn parseObj(txt: []const u8, alctr: std.mem.Allocator) !ParsedObj {
+    return try ParsedObj.init(txt, alctr);
 }
 
 test "parse camera" {
@@ -1220,6 +1364,48 @@ test "parse world (3)" {
     try exEq(@as(i64, 300), camera.height);
 }
 
+test "parse world (4)" {
+    const txt =
+        \\POINTLIGHT
+        \\position (0,8,-1)
+        \\intensity (1,1,1)
+        \\
+        \\CAMERA
+        \\width 300
+        \\height 300
+        \\fov pi/2.5
+        \\from (0,1,-4)
+        \\to (0,1,0)
+        \\up (0,1,0)
+        \\
+        \\OBJ test.obj
+    ;
+
+    const alctr = std.testing.allocator;
+    const file = try parseWorldText(txt, alctr);
+    defer alctr.free(file.sections);
+    const world = &file.world;
+    defer world.deinit();
+
+    // test.obj has 3 triangles in it
+    try exEq(@as(usize, 3), world.triangles_buf.items.len);
+    try ex(world.triangles_buf.items[0].equals(Triangle.init(
+        Point.init(-1, 1, 0),
+        Point.init(-1, 0, 0),
+        Point.init(1, 0, 0),
+    )));
+    try ex(world.triangles_buf.items[1].equals(Triangle.init(
+        Point.init(-1, 1, 0),
+        Point.init(1, 0, 0),
+        Point.init(1, 1, 0),
+    )));
+    try ex(world.triangles_buf.items[2].equals(Triangle.init(
+        Point.init(-1, 1, 0),
+        Point.init(1, 1, 0),
+        Point.init(0, 2, 0),
+    )));
+}
+
 test "parse parents: parser parses names and parent names" {
     const txt =
         \\CAMERA
@@ -1451,6 +1637,183 @@ test "Parse triangle" {
         trans.makeTranslation(0, 2, 0),
     });
     try ex(tri.transform.t.equals(t.t));
+}
+
+test "Obj: Ignore unrecognized lines" {
+    const txt =
+        \\This obj file
+        \\is not formatted
+        \\in the right format.
+        \\The parser should
+        \\ignore all of it.
+    ;
+
+    const alctr = std.testing.allocator;
+    var obj = try parseObj(txt, alctr);
+    defer obj.deinit();
+
+    try exEq(@as(usize, 5), obj.ignored_lines);
+}
+
+test "Obj: parse vertex records" {
+    const txt =
+        \\v -1 1 0
+        \\v -1.0000 0.5000 0.0000
+        \\v 1 0 0
+        \\v 1 1 0
+    ;
+
+    const alctr = std.testing.allocator;
+    var obj = try parseObj(txt, alctr);
+    defer obj.deinit();
+
+    try exEq(@as(usize, 4), obj.vertices.len);
+    try ex(obj.vertices[0].equals(Point.init(-1, 1, 0)));
+    try ex(obj.vertices[1].equals(Point.init(-1, 0.5, 0)));
+    try ex(obj.vertices[2].equals(Point.init(1, 0, 0)));
+    try ex(obj.vertices[3].equals(Point.init(1, 1, 0)));
+}
+
+test "Obj: parse triangles" {
+    const txt =
+        \\v -1 1 0
+        \\v -1 0 0
+        \\v 1 0 0
+        \\v 1 1 0
+        \\
+        \\f 1 2 3
+        \\f 1 3 4
+    ;
+
+    const alctr = std.testing.allocator;
+    var obj = try parseObj(txt, alctr);
+    defer obj.deinit();
+
+    try exEq(@as(usize, 4), obj.vertices.len);
+    try ex(obj.vertices[0].equals(Point.init(-1, 1, 0)));
+    try ex(obj.vertices[1].equals(Point.init(-1, 0, 0)));
+    try ex(obj.vertices[2].equals(Point.init(1, 0, 0)));
+    try ex(obj.vertices[3].equals(Point.init(1, 1, 0)));
+
+    try exEq(@as(usize, 2), obj.triangles.len);
+    try ex(obj.triangles[0].equals(Triangle.init(
+        obj.vertices[0],
+        obj.vertices[1],
+        obj.vertices[2],
+    )));
+    try ex(obj.triangles[1].equals(Triangle.init(
+        obj.vertices[0],
+        obj.vertices[2],
+        obj.vertices[3],
+    )));
+}
+
+test "Obj: parse polygons" {
+    const txt =
+        \\v -1 1 0
+        \\v -1 0 0
+        \\v 1 0 0
+        \\v 1 1 0
+        \\v 0 2 0
+        \\
+        \\f 1 2 3 4 5
+    ;
+
+    const alctr = std.testing.allocator;
+    var obj = try parseObj(txt, alctr);
+    defer obj.deinit();
+
+    try exEq(@as(usize, 5), obj.vertices.len);
+    try ex(obj.vertices[0].equals(Point.init(-1, 1, 0)));
+    try ex(obj.vertices[1].equals(Point.init(-1, 0, 0)));
+    try ex(obj.vertices[2].equals(Point.init(1, 0, 0)));
+    try ex(obj.vertices[3].equals(Point.init(1, 1, 0)));
+    try ex(obj.vertices[4].equals(Point.init(0, 2, 0)));
+
+    // parser will triangulate the polygon
+    try exEq(@as(usize, 3), obj.triangles.len);
+    try ex(obj.triangles[0].equals(Triangle.init(
+        obj.vertices[0],
+        obj.vertices[1],
+        obj.vertices[2],
+    )));
+    try ex(obj.triangles[1].equals(Triangle.init(
+        obj.vertices[0],
+        obj.vertices[2],
+        obj.vertices[3],
+    )));
+    try ex(obj.triangles[2].equals(Triangle.init(
+        obj.vertices[0],
+        obj.vertices[3],
+        obj.vertices[4],
+    )));
+}
+
+test "Obj: parse polygons: complex faces" {
+    const txt =
+        \\v -1 1 0
+        \\v -1 0 0
+        \\v 1 0 0
+        \\v 1 1 0
+        \\v 0 2 0
+        \\
+        \\f 1//1 2//2 3/3/3 4/4/4 5
+    ;
+
+    const alctr = std.testing.allocator;
+    var obj = try parseObj(txt, alctr);
+    defer obj.deinit();
+
+    try exEq(@as(usize, 5), obj.vertices.len);
+    try ex(obj.vertices[0].equals(Point.init(-1, 1, 0)));
+    try ex(obj.vertices[1].equals(Point.init(-1, 0, 0)));
+    try ex(obj.vertices[2].equals(Point.init(1, 0, 0)));
+    try ex(obj.vertices[3].equals(Point.init(1, 1, 0)));
+    try ex(obj.vertices[4].equals(Point.init(0, 2, 0)));
+
+    // parser will triangulate the polygon
+    try exEq(@as(usize, 3), obj.triangles.len);
+    try ex(obj.triangles[0].equals(Triangle.init(
+        obj.vertices[0],
+        obj.vertices[1],
+        obj.vertices[2],
+    )));
+    try ex(obj.triangles[1].equals(Triangle.init(
+        obj.vertices[0],
+        obj.vertices[2],
+        obj.vertices[3],
+    )));
+    try ex(obj.triangles[2].equals(Triangle.init(
+        obj.vertices[0],
+        obj.vertices[3],
+        obj.vertices[4],
+    )));
+}
+
+test "Obj: Can parse suzanne without exploding" {
+    var file = try std.fs.cwd().openFile("suzanne.obj", .{});
+    defer file.close();
+
+    const alctr = std.testing.allocator;
+
+    var txt = try file.readToEndAlloc(alctr, 1024 * 1024);
+    defer alctr.free(txt);
+
+    var obj = try parseObj(txt, alctr);
+    defer obj.deinit();
+}
+
+test "Obj: Can parse teapot-low without exploding" {
+    var file = try std.fs.cwd().openFile("teapot-low.obj", .{});
+    defer file.close();
+
+    const alctr = std.testing.allocator;
+
+    var txt = try file.readToEndAlloc(alctr, 1024 * 1024);
+    defer alctr.free(txt);
+
+    var obj = try parseObj(txt, alctr);
+    defer obj.deinit();
 }
 
 const std = @import("std");

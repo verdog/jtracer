@@ -258,6 +258,12 @@ pub const Triangle = struct {
         return self.transform.t.mult(self.normal).normalized();
     }
 
+    pub fn equals(self: This, other: This) bool {
+        return self.p1.equals(other.p1) and
+            self.p2.equals(other.p2) and
+            self.p3.equals(other.p3);
+    }
+
     const This = @This();
 };
 
