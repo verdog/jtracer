@@ -237,6 +237,8 @@ pub fn parseWorldText(txt: []const u8, alctr: std.mem.Allocator) !FileContents {
             var tokens = std.mem.tokenize(u8, section.header(), " ");
             _ = tokens.next(); // "OBJ"
             const filename = tokens.next() orelse return unimplementedError();
+
+            // get obj data
             var obj = try parseObjFile(filename, alctr);
             defer obj.deinit();
 
@@ -247,6 +249,16 @@ pub fn parseWorldText(txt: []const u8, alctr: std.mem.Allocator) !FileContents {
             for (obj.triangles) |tri| {
                 var world_triangle = world.addVolume(Triangle);
                 world_triangle.ptr.* = tri;
+            }
+
+            // check for other attribs
+            var lines = std.mem.tokenize(u8, section.text, "\n");
+            while (lines.next()) |line| {
+                if (std.mem.startsWith(u8, line, "material")) {
+                    for (world.triangles_buf.items) |*tri| {
+                        try parseAndApplyMaterial(line, &tri.material);
+                    }
+                }
             }
         } else {
             // single object
@@ -1814,6 +1826,31 @@ test "Obj: Can parse teapot-low without exploding" {
 
     var obj = try parseObj(txt, alctr);
     defer obj.deinit();
+}
+
+test "Obj: apply material" {
+    const txt =
+        \\CAMERA
+        \\scale 1
+        \\width 12
+        \\height 12
+        \\fov pi/2.5
+        \\from (-0.2,3.25,-10)
+        \\to (-0.2,1.75,0)
+        \\up (0,1,0)
+        \\
+        \\OBJ test.obj
+        \\material flat (1,0,0)
+    ;
+
+    const alctr = std.testing.allocator;
+    const file = try parseWorldText(txt, alctr);
+    defer alctr.free(file.sections);
+    const world = &file.world;
+    defer world.deinit();
+
+    try exEq(@as(usize, 3), world.triangles_buf.items.len);
+    try ex(world.triangles_buf.items[0].material.color_map.flat.color.equals(Color.init(1, 0, 0)));
 }
 
 const std = @import("std");

@@ -16,3 +16,4 @@ transform translate (0,0,1)
 material flat (0.3,0.3,0.3)
 
 OBJ teapot-low.obj
+material flat (0,1,0)
