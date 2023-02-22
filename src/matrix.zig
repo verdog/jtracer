@@ -20,7 +20,7 @@ pub fn Matrix(comptime _rows: usize, comptime _cols: usize) type {
             const zero: f64 = 0;
             var m = This{ .vec = @splat(_rows * _cols, zero) };
 
-            inline for (inits) |val, i| {
+            inline for (inits, 0..) |val, i| {
                 m.vec[i] = val;
             }
 
@@ -196,9 +196,9 @@ pub fn Matrix(comptime _rows: usize, comptime _cols: usize) type {
             var inits: std.meta.Tuple(&[_]type{f64} ** (_rows - 1) ** (_cols - 1)) = .{0} ** (_rows - 1) ** (_cols - 1);
 
             var self_i: usize = 0;
-            inline for (inits) |*val| {
+            inline for (inits, 0..) |_, i| {
                 while ((self_i / This.compt_rows) == row or (self_i % This.compt_columns) == column) self_i += 1;
-                val.* = self.vec[self_i];
+                inits[i] = self.vec[self_i];
                 self_i += 1;
             }
 

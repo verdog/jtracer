@@ -335,7 +335,7 @@ const VolumeTree = struct {
     }
 
     pub fn print(self: VolumeTree) void {
-        for (self.nodes) |n, i| {
+        for (self.nodes, 0..) |n, i| {
             if (n.parent_idx == null) {
                 self.printDepthFirst(i, 0);
             }
@@ -354,7 +354,7 @@ const VolumeTree = struct {
     }
 
     pub fn applyTransforms(self: VolumeTree, world: *World) void {
-        for (self.nodes) |n, i| {
+        for (self.nodes, 0..) |n, i| {
             if (n.parent_idx == null and n.vptr != null) {
                 self.applyTransformsDepthFirst(world, i, Transform{});
             }
@@ -373,10 +373,10 @@ fn getVolumeTree(sections: []FileSection, alctr: std.mem.Allocator) VolumeTree {
     var tree_nodes = alctr.alloc(VolumeTreeNode, sections.len) catch unreachable;
 
     // initialize flat tree
-    for (sections) |s, i| {
+    for (sections, 0..) |s, i| {
         const pidx: ?usize = blk: {
             if (s.parentName()) |pname| {
-                for (sections) |ps, j| {
+                for (sections, 0..) |ps, j| {
                     if (std.mem.eql(u8, ps.name(), pname))
                         break :blk j;
                 }
@@ -394,7 +394,7 @@ fn getVolumeTree(sections: []FileSection, alctr: std.mem.Allocator) VolumeTree {
     }
 
     // populate children lists
-    for (tree_nodes) |tn, i| {
+    for (tree_nodes, 0..) |tn, i| {
         if (tn.parent_idx) |pi| {
             tree_nodes[pi].children_idxs.append(i) catch unreachable;
         }
@@ -418,7 +418,7 @@ fn findSectionBounds(txt: []const u8) struct { min: ?usize, max: usize } {
     var keys_idxs = [_]?usize{null} ** keys.len;
 
     const min = blk: {
-        for (keys) |key, i| {
+        for (keys, 0..) |key, i| {
             keys_idxs[i] = std.mem.indexOf(u8, txt, key);
         }
 
@@ -435,7 +435,7 @@ fn findSectionBounds(txt: []const u8) struct { min: ?usize, max: usize } {
     };
 
     const max = blk: {
-        for (keys) |key, i| {
+        for (keys, 0..) |key, i| {
             keys_idxs[i] = std.mem.indexOf(u8, txt[min + 1 ..], key);
             if (keys_idxs[i] != null) keys_idxs[i].? += 1;
         }

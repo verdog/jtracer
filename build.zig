@@ -10,20 +10,23 @@ pub fn build(b: *std.build.Builder) void {
 
     // Standard release options allow the person running `zig build` to select
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
-    const mode = b.standardReleaseOptions();
+    const mode = b.standardOptimizeOption(.{});
 
-    const SDL = SDLSdk.init(b);
+    const SDL = SDLSdk.init(b, null);
 
-    const exe = b.addExecutable("jtracer", "src/main.zig");
+    const exe = b.addExecutable(.{
+        .name = "jtracer",
+        .root_source_file = .{ .path = "src/main.zig" },
+        .target = target,
+        .optimize = mode,
+    });
     exe.emit_docs = .emit;
-    exe.setTarget(target);
     exe.setMainPkgPath("./src");
 
     SDL.link(exe, .dynamic);
-    exe.addPackage(SDL.getWrapperPackage("sdl2"));
+    exe.addModule("sdl2", SDL.getWrapperModule());
     exe.linkSystemLibrary("sdl2_image");
 
-    exe.setBuildMode(mode);
     exe.install();
 
     const run_cmd = exe.run();
@@ -36,8 +39,10 @@ pub fn build(b: *std.build.Builder) void {
     run_step.dependOn(&run_cmd.step);
 
     const test_step = b.step("test", "Run unit tests");
-    var ts = b.addTest("src/main.zig");
-    ts.setTarget(target);
-    ts.setBuildMode(mode);
+    var ts = b.addTest(.{
+        .root_source_file = .{ .path = "src/main.zig" },
+        .target = target,
+        .optimize = mode,
+    });
     test_step.dependOn(&ts.step);
 }

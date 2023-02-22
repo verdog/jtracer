@@ -86,7 +86,7 @@ pub fn startRenderEngine(world: World, cam: Camera, qan: *Qanvas, alctr: std.mem
     var threads_alctrs_buf = [_]std.heap.FixedBufferAllocator{undefined} ** 16;
     var threads_alctrs = threads_alctrs_buf[0..num_threads];
 
-    for (threads_alctrs) |*alc, i| {
+    for (threads_alctrs, 0..) |*alc, i| {
         alc.* = std.heap.FixedBufferAllocator.init(threads_working_mem[i]);
     }
 
@@ -104,7 +104,7 @@ pub fn startRenderEngine(world: World, cam: Camera, qan: *Qanvas, alctr: std.mem
         // start thread on chunk
         if (mchunk) |chunk| {
             const mthread_i: ?usize = blk: {
-                for (threads_idle) |ti, i| {
+                for (threads_idle, 0..) |ti, i| {
                     if (ti == true) {
                         break :blk i;
                     }
@@ -136,7 +136,7 @@ pub fn startRenderEngine(world: World, cam: Camera, qan: *Qanvas, alctr: std.mem
     // wait for threads to finish
     while (true) {
         const workth_i: ?usize = blk: {
-            for (threads_idle) |ti, i| {
+            for (threads_idle, 0..) |ti, i| {
                 if (ti == false) {
                     break :blk i;
                 }

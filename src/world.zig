@@ -145,32 +145,32 @@ pub const World = struct {
     pub fn intersect(self: This, ray: Ray, ixs: *Intersections) void {
         ixs.clear();
 
-        for (self.spheres_buf.items) |*ptr, i| {
+        for (self.spheres_buf.items, 0..) |*ptr, i| {
             const vptr = VolumePtr{ .sphere_idx = @intCast(u16, i) };
             ixs.intersect(ptr.*, vptr, ray);
         }
 
-        for (self.planes_buf.items) |*ptr, i| {
+        for (self.planes_buf.items, 0..) |*ptr, i| {
             const vptr = VolumePtr{ .plane_idx = @intCast(u16, i) };
             ixs.intersect(ptr.*, vptr, ray);
         }
 
-        for (self.cubes_buf.items) |*ptr, i| {
+        for (self.cubes_buf.items, 0..) |*ptr, i| {
             const vptr = VolumePtr{ .cube_idx = @intCast(u16, i) };
             ixs.intersect(ptr.*, vptr, ray);
         }
 
-        for (self.cylinders_buf.items) |*ptr, i| {
+        for (self.cylinders_buf.items, 0..) |*ptr, i| {
             const vptr = VolumePtr{ .cylinder_idx = @intCast(u16, i) };
             ixs.intersect(ptr.*, vptr, ray);
         }
 
-        for (self.cones_buf.items) |*ptr, i| {
+        for (self.cones_buf.items, 0..) |*ptr, i| {
             const vptr = VolumePtr{ .cone_idx = @intCast(u16, i) };
             ixs.intersect(ptr.*, vptr, ray);
         }
 
-        for (self.triangles_buf.items) |*ptr, i| {
+        for (self.triangles_buf.items, 0..) |*ptr, i| {
             const vptr = VolumePtr{ .triangle_idx = @intCast(u16, i) };
             ixs.intersect(ptr.*, vptr, ray);
         }

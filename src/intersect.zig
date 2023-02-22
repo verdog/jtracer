@@ -431,7 +431,7 @@ pub const Intersections = struct {
             }
 
             const my_x_idx: ?usize = blk: {
-                for (self.containers.items) |c, i| {
+                for (self.containers.items, 0..) |c, i| {
                     if (std.meta.eql(my_x.vptr, c.vptr)) {
                         break :blk i;
                     }

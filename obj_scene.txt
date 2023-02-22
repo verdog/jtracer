@@ -3,8 +3,9 @@ position (10,20,20)
 intensity (1,1,1)
 
 CAMERA
-width 600
-height 600
+width 400
+height 400
+scale 1
 fov pi/3
 from (0,40,20)
 to (0,0,5)
@@ -15,5 +16,19 @@ transform rotate x pi/2
 transform translate (0,0,1)
 material flat (0.3,0.3,0.3)
 
-OBJ teapot-low.obj
-material flat (0,1,0)
+OBJ teapot.obj
+material flat (0.8,0.1,0.1)
+material diffuse 1
+material ambient 0.1
+transform rotate z pi/2
+
+SPHERE
+transform scale (10,10,10)
+transform translate (20,-45,10)
+material flat (0,0,0)
+material reflective 1
+
+SPHERE
+transform scale (5,5,5)
+transform translate (-15,-45,5)
+material flat (0,1,1)

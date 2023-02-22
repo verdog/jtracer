@@ -10,7 +10,7 @@ pub fn encodeQanvasAsQoi(qan: Qanvas, alctr: std.mem.Allocator) ![]u8 {
     var qixels = try alctr.alloc(qoi.Qixel, qan.pixels.len);
     defer alctr.free(qixels);
 
-    for (qixels) |*q, i| {
+    for (qixels, 0..) |*q, i| {
         q.* = qoi.Qixel.fromColor(qan.pixels[i]);
     }
 
@@ -27,7 +27,7 @@ pub fn encodeQanvasAsQixel(qan: Qanvas, alctr: std.mem.Allocator) ![]qoi.Qixel {
 }
 
 pub fn encodeQanvasAsQixelUpdate(qan: Qanvas, to_update: []qoi.Qixel) !void {
-    for (to_update) |*q, i| {
+    for (to_update, 0..) |*q, i| {
         q.* = qoi.Qixel.fromColor(qan.pixels[i]);
     }
 }
