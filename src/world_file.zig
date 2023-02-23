@@ -10,76 +10,165 @@ pub const WorldParseError = error{
 const FileSection = struct {
     /// Reference to section of original text. Not owned by this object
     text: []const u8,
+    header: []const u8,
+    name: []const u8,
+    parent_name: ?[]const u8,
     vptr: ?VolumePtr = null,
+    data: Data,
 
-    pub fn header(self: This) []const u8 {
-        return std.mem.sliceTo(self.text, '\n');
-    }
+    const Data = union(enum) {
+        camera: Camera,
+        point_light: PointLight,
+        cone: Cone,
+        sphere: Sphere,
+        plane: Plane,
+        cube: Cube,
+        cylinder: Cylinder,
+        triangle: Triangle,
+    };
 
-    pub fn name(self: This) []const u8 {
-        var split = std.mem.split(u8, self.header(), " ");
-        const shape = split.first();
-        const name_text = split.rest();
+    pub fn inits(text: []const u8, alctr: std.mem.Allocator) ![]This {
+        const header = std.mem.sliceTo(text, '\n');
 
-        if (name_text.len > 0) return name_text;
-        return shape;
-    }
+        const name = blk: {
+            var split = std.mem.split(u8, header, " ");
+            const shape = split.first();
+            const name_text = split.rest();
 
-    pub fn parentName(self: This) ?[]const u8 {
-        // get parent if present
-        var lines = std.mem.tokenize(u8, self.text, "\n");
-        while (lines.next()) |line| {
-            if (std.mem.startsWith(u8, line, "parent")) {
-                var split = std.mem.split(u8, line, " ");
-                _ = split.next();
-                return split.rest();
+            if (name_text.len > 0) break :blk name_text;
+            break :blk shape;
+        };
+
+        const parent_name = blk: {
+            var lines = std.mem.tokenize(u8, text, "\n");
+            while (lines.next()) |line| {
+                if (std.mem.startsWith(u8, line, "parent")) {
+                    var split = std.mem.split(u8, line, " ");
+                    _ = split.next();
+                    break :blk split.rest();
+                }
             }
+            break :blk null;
+        };
+
+        const data = blk: {
+            var result_data = std.ArrayList(Data).init(alctr);
+
+            if (std.mem.startsWith(u8, header, "CAMERA")) {
+                const datum = try parseCamera(text);
+                try result_data.append(.{ .camera = datum });
+            } else if (std.mem.startsWith(u8, header, "POINTLIGHT")) {
+                const datum = try parsePointLight(text);
+                try result_data.append(.{ .point_light = datum });
+            } else if (std.mem.startsWith(u8, header, "CONE")) {
+                const datum = try parseCone(text);
+                try result_data.append(.{ .cone = datum });
+            } else if (std.mem.startsWith(u8, header, "SPHERE")) {
+                const datum = try parseSphere(text);
+                try result_data.append(.{ .sphere = datum });
+            } else if (std.mem.startsWith(u8, header, "PLANE")) {
+                const datum = try parsePlane(text);
+                try result_data.append(.{ .plane = datum });
+            } else if (std.mem.startsWith(u8, header, "CUBE")) {
+                const datum = try parseCube(text);
+                try result_data.append(.{ .cube = datum });
+            } else if (std.mem.startsWith(u8, header, "CYLINDER")) {
+                const datum = try parseCylinder(text);
+                try result_data.append(.{ .cylinder = datum });
+            } else if (std.mem.startsWith(u8, header, "TRIANGLE")) {
+                const datum = try parseTriangle(text);
+                try result_data.append(.{ .triangle = datum });
+            } else if (std.mem.startsWith(u8, header, "OBJ")) {
+                // special case: OBJ sections should add a bunch of triange sections
+                var tokens = std.mem.tokenize(u8, header, " ");
+                _ = tokens.next(); // skip "OBJ"
+                const filename = tokens.next().?;
+
+                // get obj data
+                var obj = try parseObjFile(filename, alctr);
+                defer obj.deinit();
+
+                // find materials or transforms
+                var mat = Material.init();
+                var tran = Transform{};
+                {
+                    var lines = std.mem.tokenize(u8, text, "\n");
+                    while (lines.next()) |line| {
+                        if (std.mem.startsWith(u8, line, "material")) {
+                            try parseAndApplyMaterial(line, &mat);
+                        } else if (std.mem.startsWith(u8, line, "transform")) {
+                            try parseAndApplyTransform(line, &tran);
+                        }
+                    }
+                }
+
+                // add each triangle
+                for (obj.triangles) |*tri| {
+                    tri.material = mat;
+                    tri.transform = tran;
+                    try result_data.append(.{ .triangle = tri.* });
+                }
+            } else {
+                unreachable;
+            }
+
+            break :blk result_data.toOwnedSlice() catch unreachable;
+        };
+        defer alctr.free(data);
+
+        var results = alctr.alloc(This, data.len) catch unreachable;
+
+        for (data, 0..) |datum, i| {
+            results[i] = This{
+                .text = text,
+                .header = header,
+                .name = name,
+                .parent_name = parent_name,
+                .data = datum,
+            };
         }
-        return null;
+
+        return results;
     }
 
     pub fn addObjectToWorld(self: *This, world: *World, camera: *?Camera) !void {
-        const header_text = self.header();
-
-        if (std.mem.startsWith(u8, header_text, "CAMERA")) {
-            camera.* = try parseCamera(self.text);
-        } else if (std.mem.startsWith(u8, header_text, "POINTLIGHT")) {
-            var world_light = world.addLight(PointLight);
-            var parsed_light = try parsePointLight(self.text);
-            world_light.ptr.* = parsed_light;
-            // self.vptr = world_light.handle; // TODO merge volptr and lightptr
-        } else if (std.mem.startsWith(u8, header_text, "CONE")) {
-            var world_cone = world.addVolume(Cone);
-            var parsed_cone = try parseCone(self.text);
-            world_cone.ptr.* = parsed_cone;
-            self.vptr = world_cone.handle;
-        } else if (std.mem.startsWith(u8, header_text, "SPHERE")) {
-            var world_sphere = world.addVolume(Sphere);
-            var parsed_sphere = try parseSphere(self.text);
-            world_sphere.ptr.* = parsed_sphere;
-            self.vptr = world_sphere.handle;
-        } else if (std.mem.startsWith(u8, header_text, "PLANE")) {
-            var world_plane = world.addVolume(Plane);
-            var parsed_plane = try parsePlane(self.text);
-            world_plane.ptr.* = parsed_plane;
-            self.vptr = world_plane.handle;
-        } else if (std.mem.startsWith(u8, header_text, "CUBE")) {
-            var world_cube = world.addVolume(Cube);
-            var parsed_cube = try parseCube(self.text);
-            world_cube.ptr.* = parsed_cube;
-            self.vptr = world_cube.handle;
-        } else if (std.mem.startsWith(u8, header_text, "CYLINDER")) {
-            var world_cylinder = world.addVolume(Cylinder);
-            var parsed_cylinder = try parseCylinder(self.text);
-            world_cylinder.ptr.* = parsed_cylinder;
-            self.vptr = world_cylinder.handle;
-        } else if (std.mem.startsWith(u8, header_text, "TRIANGLE")) {
-            var world_triangle = world.addVolume(Triangle);
-            var parsed_triangle = try parseTriangle(self.text);
-            world_triangle.ptr.* = parsed_triangle;
-            self.vptr = world_triangle.handle;
+        switch (self.data) {
+            .camera => |d| camera.* = d,
+            .point_light => |d| {
+                var new_light = world.addLight(PointLight);
+                new_light.ptr.* = d;
+            },
+            .cone => |c| {
+                var new_cone = world.addVolume(Cone);
+                new_cone.ptr.* = c;
+                self.vptr = new_cone.handle;
+            },
+            .sphere => |sph| {
+                var new_sphere = world.addVolume(Sphere);
+                new_sphere.ptr.* = sph;
+                self.vptr = new_sphere.handle;
+            },
+            .plane => |pl| {
+                var new_plane = world.addVolume(Plane);
+                new_plane.ptr.* = pl;
+                self.vptr = new_plane.handle;
+            },
+            .cube => |c| {
+                var new_cube = world.addVolume(Cube);
+                new_cube.ptr.* = c;
+                self.vptr = new_cube.handle;
+            },
+            .cylinder => |c| {
+                var new_cylinder = world.addVolume(Cylinder);
+                new_cylinder.ptr.* = c;
+                self.vptr = new_cylinder.handle;
+            },
+            .triangle => |t| {
+                var new_triangle = world.addVolume(Triangle);
+                new_triangle.ptr.* = t;
+                self.vptr = new_triangle.handle;
+            },
         }
-        // std.debug.print("+ {s} ({s})\n", .{ self.name(), self.header() });
     }
 
     const This = @This();
@@ -227,48 +316,12 @@ pub fn parseObjFile(filename: []const u8, alctr: std.mem.Allocator) !ParsedObj {
 pub fn parseWorldText(txt: []const u8, alctr: std.mem.Allocator) !FileContents {
     var world = World.init(alctr);
     var camera: ?Camera = null;
-    var sections = getTextSections(txt, alctr);
+    var sections = try getTextSections(txt, alctr);
     defer sections.deinit();
 
     // populate world
     for (sections.items) |*section| {
-        // XXX: this should be collapsed into addObjectToWorld somehow
-        if (std.mem.startsWith(u8, section.header(), "OBJ ")) {
-            // handle obj file
-            var tokens = std.mem.tokenize(u8, section.header(), " ");
-            _ = tokens.next(); // "OBJ"
-            const filename = tokens.next() orelse return unimplementedError();
-
-            // get obj data
-            var obj = try parseObjFile(filename, alctr);
-            defer obj.deinit();
-
-            // create parent object
-            // TODO
-
-            // add each triangle
-            for (obj.triangles) |tri| {
-                var world_triangle = world.addVolume(Triangle);
-                world_triangle.ptr.* = tri;
-            }
-
-            // check for other attribs
-            var lines = std.mem.tokenize(u8, section.text, "\n");
-            while (lines.next()) |line| {
-                if (std.mem.startsWith(u8, line, "material")) {
-                    for (world.triangles_buf.items) |*tri| {
-                        try parseAndApplyMaterial(line, &tri.material);
-                    }
-                } else if (std.mem.startsWith(u8, line, "transform")) {
-                    for (world.triangles_buf.items) |*tri| {
-                        try parseAndApplyTransform(line, &tri.transform);
-                    }
-                }
-            }
-        } else {
-            // single object
-            try section.addObjectToWorld(&world, &camera);
-        }
+        try section.addObjectToWorld(&world, &camera);
     }
 
     // link parents/children
@@ -287,7 +340,7 @@ pub fn parseWorldText(txt: []const u8, alctr: std.mem.Allocator) !FileContents {
     };
 }
 
-fn getTextSections(txt: []const u8, alctr: std.mem.Allocator) std.ArrayList(FileSection) {
+fn getTextSections(txt: []const u8, alctr: std.mem.Allocator) !std.ArrayList(FileSection) {
     var sections = std.ArrayList(FileSection).init(alctr);
 
     var remaining = txt;
@@ -296,9 +349,14 @@ fn getTextSections(txt: []const u8, alctr: std.mem.Allocator) std.ArrayList(File
     while (chunk_idxs.min) |min| {
         const chunk = remaining[min..chunk_idxs.max];
 
-        sections.append(FileSection{ .text = chunk }) catch unreachable;
-        // std.debug.print("p {s}\n", .{sections.items[sections.items.len - 1].header()});
+        const parsed_sections = try FileSection.inits(chunk, alctr);
+        defer alctr.free(parsed_sections);
 
+        for (parsed_sections) |section| {
+            sections.append(section) catch unreachable;
+        }
+
+        // std.debug.print("p {s}\n", .{sections.items[sections.items.len - 1].header()});
         if (chunk_idxs.max == remaining.len) break;
 
         remaining = remaining[chunk_idxs.max..];
@@ -379,9 +437,9 @@ fn getVolumeTree(sections: []FileSection, alctr: std.mem.Allocator) VolumeTree {
     // initialize flat tree
     for (sections, 0..) |s, i| {
         const pidx: ?usize = blk: {
-            if (s.parentName()) |pname| {
+            if (s.parent_name) |pname| {
                 for (sections, 0..) |ps, j| {
-                    if (std.mem.eql(u8, ps.name(), pname))
+                    if (std.mem.eql(u8, ps.name, pname))
                         break :blk j;
                 }
                 unreachable;
@@ -1456,22 +1514,22 @@ test "parse parents: parser parses names and parent names" {
 
     try exEq(@as(usize, 5), file.sections.len);
 
-    try exEqStr("CAMERA", std.mem.sliceTo(file.sections[0].name(), 0));
-    try exEq(@as(?[]const u8, null), file.sections[0].parentName());
+    try exEqStr("CAMERA", std.mem.sliceTo(file.sections[0].name, 0));
+    try exEq(@as(?[]const u8, null), file.sections[0].parent_name);
 
-    try exEqStr("name 1", std.mem.sliceTo(file.sections[1].name(), 0));
-    try exEq(@as(?[]const u8, null), file.sections[1].parentName());
+    try exEqStr("name 1", std.mem.sliceTo(file.sections[1].name, 0));
+    try exEq(@as(?[]const u8, null), file.sections[1].parent_name);
 
-    try exEqStr("CONE", std.mem.sliceTo(file.sections[2].name(), 0));
-    try exEq(@as(?[]const u8, null), file.sections[2].parentName());
+    try exEqStr("CONE", std.mem.sliceTo(file.sections[2].name, 0));
+    try exEq(@as(?[]const u8, null), file.sections[2].parent_name);
 
-    try exEqStr("midlevel", std.mem.sliceTo(file.sections[3].name(), 0));
-    try ex(file.sections[3].parentName() != null);
-    try exEqStr("name 1", std.mem.sliceTo(file.sections[3].parentName().?, 0));
+    try exEqStr("midlevel", std.mem.sliceTo(file.sections[3].name, 0));
+    try ex(file.sections[3].parent_name != null);
+    try exEqStr("name 1", std.mem.sliceTo(file.sections[3].parent_name.?, 0));
 
-    try exEqStr("SPHERE", std.mem.sliceTo(file.sections[4].name(), 0));
-    try ex(file.sections[4].parentName() != null);
-    try exEqStr("midlevel", std.mem.sliceTo(file.sections[4].parentName().?, 0));
+    try exEqStr("SPHERE", std.mem.sliceTo(file.sections[4].name, 0));
+    try ex(file.sections[4].parent_name != null);
+    try exEqStr("midlevel", std.mem.sliceTo(file.sections[4].parent_name.?, 0));
 }
 
 test "parse parents: parser parses vptrs" {
@@ -1869,6 +1927,35 @@ test "Obj: apply transform" {
         \\
         \\OBJ obj/test.obj
         \\transform translate (0,1,0)
+    ;
+
+    const alctr = std.testing.allocator;
+    const file = try parseWorldText(txt, alctr);
+    defer alctr.free(file.sections);
+    const world = &file.world;
+    defer world.deinit();
+
+    try exEq(@as(usize, 3), world.triangles_buf.items.len);
+    try ex(world.triangles_buf.items[0].transform.t.equals(trans.makeTranslation(0, 1, 0).t));
+    try ex(world.triangles_buf.items[1].transform.t.equals(trans.makeTranslation(0, 1, 0).t));
+    try ex(world.triangles_buf.items[2].transform.t.equals(trans.makeTranslation(0, 1, 0).t));
+}
+
+test "obj: parent" {
+    const txt =
+        \\CAMERA
+        \\width 300
+        \\height 300
+        \\fov pi/2.5
+        \\from (0,1,-4)
+        \\to (0,1,0)
+        \\up (0,1,0)
+        \\
+        \\SPHERE middle
+        \\transform translate (0,1,0)
+        \\
+        \\OBJ obj/test.obj
+        \\parent middle
     ;
 
     const alctr = std.testing.allocator;
