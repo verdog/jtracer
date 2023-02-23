@@ -1,0 +1,19 @@
+POINTLIGHT
+position (10,20,20)
+intensity (1,1,1)
+
+CAMERA
+width 400
+height 400
+scale 1
+fov pi/3
+from (0,20,40)
+to (0,5,0)
+up (0,1,0)
+
+PLANE
+material flat (0.3,0.3,0.3)
+
+OBJ teapot-low.obj
+transform rotate x pi/-2
+material flat (0.7,0.2,0.2)

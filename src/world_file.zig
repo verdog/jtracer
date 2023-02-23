@@ -228,9 +228,10 @@ pub fn parseWorldText(txt: []const u8, alctr: std.mem.Allocator) !FileContents {
     var world = World.init(alctr);
     var camera: ?Camera = null;
     var sections = getTextSections(txt, alctr);
+    defer sections.deinit();
 
     // populate world
-    for (sections) |*section| {
+    for (sections.items) |*section| {
         // XXX: this should be collapsed into addObjectToWorld somehow
         if (std.mem.startsWith(u8, section.header(), "OBJ ")) {
             // handle obj file
@@ -258,6 +259,10 @@ pub fn parseWorldText(txt: []const u8, alctr: std.mem.Allocator) !FileContents {
                     for (world.triangles_buf.items) |*tri| {
                         try parseAndApplyMaterial(line, &tri.material);
                     }
+                } else if (std.mem.startsWith(u8, line, "transform")) {
+                    for (world.triangles_buf.items) |*tri| {
+                        try parseAndApplyTransform(line, &tri.transform);
+                    }
                 }
             }
         } else {
@@ -267,9 +272,9 @@ pub fn parseWorldText(txt: []const u8, alctr: std.mem.Allocator) !FileContents {
     }
 
     // link parents/children
-    var tree = getVolumeTree(sections, alctr);
-    tree.applyTransforms(&world);
+    var tree = getVolumeTree(sections.items, alctr);
     defer tree.deinit();
+    tree.applyTransforms(&world);
 
     if (camera == null) return unimplementedError();
 
@@ -278,11 +283,11 @@ pub fn parseWorldText(txt: []const u8, alctr: std.mem.Allocator) !FileContents {
         .camera = camera.?,
         .alctr = alctr,
         .text = txt,
-        .sections = sections,
+        .sections = sections.toOwnedSlice() catch unreachable,
     };
 }
 
-fn getTextSections(txt: []const u8, alctr: std.mem.Allocator) []FileSection {
+fn getTextSections(txt: []const u8, alctr: std.mem.Allocator) std.ArrayList(FileSection) {
     var sections = std.ArrayList(FileSection).init(alctr);
 
     var remaining = txt;
@@ -300,7 +305,7 @@ fn getTextSections(txt: []const u8, alctr: std.mem.Allocator) []FileSection {
         chunk_idxs = findSectionBounds(remaining);
     }
 
-    return sections.toOwnedSlice() catch unreachable;
+    return sections;
 }
 
 const VolumeTree = struct {
@@ -364,7 +369,6 @@ const VolumeTree = struct {
 
 const VolumeTreeNode = struct {
     vptr: ?VolumePtr,
-    idx: usize,
     parent_idx: ?usize,
     children_idxs: std.ArrayList(usize),
 };
@@ -387,7 +391,6 @@ fn getVolumeTree(sections: []FileSection, alctr: std.mem.Allocator) VolumeTree {
 
         tree_nodes[i] = VolumeTreeNode{
             .vptr = s.vptr,
-            .idx = i,
             .parent_idx = pidx,
             .children_idxs = std.ArrayList(usize).init(alctr),
         };
@@ -1390,7 +1393,7 @@ test "parse world (4)" {
         \\to (0,1,0)
         \\up (0,1,0)
         \\
-        \\OBJ test.obj
+        \\OBJ obj/test.obj
     ;
 
     const alctr = std.testing.allocator;
@@ -1803,7 +1806,7 @@ test "Obj: parse polygons: complex faces" {
 }
 
 test "Obj: Can parse suzanne without exploding" {
-    var file = try std.fs.cwd().openFile("suzanne.obj", .{});
+    var file = try std.fs.cwd().openFile("obj/suzanne.obj", .{});
     defer file.close();
 
     const alctr = std.testing.allocator;
@@ -1816,7 +1819,7 @@ test "Obj: Can parse suzanne without exploding" {
 }
 
 test "Obj: Can parse teapot-low without exploding" {
-    var file = try std.fs.cwd().openFile("teapot-low.obj", .{});
+    var file = try std.fs.cwd().openFile("obj/teapot-low.obj", .{});
     defer file.close();
 
     const alctr = std.testing.allocator;
@@ -1839,7 +1842,7 @@ test "Obj: apply material" {
         \\to (-0.2,1.75,0)
         \\up (0,1,0)
         \\
-        \\OBJ test.obj
+        \\OBJ obj/test.obj
         \\material flat (1,0,0)
     ;
 
@@ -1851,6 +1854,33 @@ test "Obj: apply material" {
 
     try exEq(@as(usize, 3), world.triangles_buf.items.len);
     try ex(world.triangles_buf.items[0].material.color_map.flat.color.equals(Color.init(1, 0, 0)));
+}
+
+test "Obj: apply transform" {
+    const txt =
+        \\CAMERA
+        \\scale 1
+        \\width 12
+        \\height 12
+        \\fov pi/2.5
+        \\from (-0.2,3.25,-10)
+        \\to (-0.2,1.75,0)
+        \\up (0,1,0)
+        \\
+        \\OBJ obj/test.obj
+        \\transform translate (0,1,0)
+    ;
+
+    const alctr = std.testing.allocator;
+    const file = try parseWorldText(txt, alctr);
+    defer alctr.free(file.sections);
+    const world = &file.world;
+    defer world.deinit();
+
+    try exEq(@as(usize, 3), world.triangles_buf.items.len);
+    try ex(world.triangles_buf.items[0].transform.t.equals(trans.makeTranslation(0, 1, 0).t));
+    try ex(world.triangles_buf.items[1].transform.t.equals(trans.makeTranslation(0, 1, 0).t));
+    try ex(world.triangles_buf.items[2].transform.t.equals(trans.makeTranslation(0, 1, 0).t));
 }
 
 const std = @import("std");

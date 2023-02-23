@@ -1,7 +1,7 @@
 CAMERA
 scale 1
 width 1200
-height 1200
+height 800
 fov pi/2.5
 from (-0.2,3.25,-10)
 to (-0.2,1.75,0)
@@ -56,12 +56,8 @@ material reflective 0.12
 material transform translate (0.5,0,0.5)
 material transform scale (8,8,8)
 
-SPHERE on middle cube
-material flat (0.2,0.2,0.7)
-transform translate (0,3,0)
-
 SPHERE to right
-material flat (0.2,0.2,0.7)
+material 3dchecker (0.2,0.2,0.6) (0.6,0.2,0.2)
 transform translate (3,1,-2.5)
 
 CYLINDER on left cube upright
@@ -121,9 +117,3 @@ material ambient 0.1
 material reflective 0.9
 transform translate (0,2,0)
 parent gem on top of right cube, right half
-
-TRIANGLE
-p1 (0,0,0)
-p2 (1,0,1)
-p3 (0,1,0)
-transform translate (0,5,0)
