@@ -24,13 +24,14 @@ const Chunk = struct {
     end_x: i64,
     start_y: i64,
     end_y: i64,
-    done: bool,
+    pixel_size: i64,
 };
 
 fn getChunks(w: i64, qan: Qanvas, alctr: std.mem.Allocator) []Chunk {
     var chunks = std.ArrayList(Chunk).init(alctr);
 
     const y_w = w;
+    std.debug.assert(@popCount(w) == 1);
 
     const chunks_x = @divTrunc(@intCast(i64, qan.width) -| 1, w) + 1;
     const chunks_y = @divTrunc(@intCast(i64, qan.height) -| 1, y_w) + 1;
@@ -44,7 +45,7 @@ fn getChunks(w: i64, qan: Qanvas, alctr: std.mem.Allocator) []Chunk {
                 .end_x = @min(@intCast(i64, qan.width), w * (x + 1)),
                 .start_y = y_w * y,
                 .end_y = @min(@intCast(i64, qan.height), y_w * (y + 1)),
-                .done = false,
+                .pixel_size = w,
             }) catch unreachable;
         }
     }
@@ -82,24 +83,31 @@ fn getChunks(w: i64, qan: Qanvas, alctr: std.mem.Allocator) []Chunk {
     // sort chunks by distance from center to attempt to render the focus of the image first
     std.sort.sort(Chunk, chunks.items, qan, closeToCenter);
 
-    // var prng = std.rand.DefaultPrng.init(0);
-    // var random = prng.random();
-    // random.shuffle(Chunk, chunks);
-
     return chunks.toOwnedSlice() catch unreachable;
 }
 
 pub fn startRenderEngine(world: World, cam: Camera, qan: *Qanvas, alctr: std.mem.Allocator) void {
     std.debug.print("Starting render.\n", .{});
     var prog_ctx = std.Progress{};
-    var prog = prog_ctx.start("Pixels", qan.width * qan.height);
+    var prog = blk: {
+        var total: u64 = 0;
+        var working_width = qan.width;
+        var working_height = qan.height;
 
-    // TODO base this size on cache size?
+        while (working_width > 0 and working_height > 0) {
+            total += working_width * working_height;
+            working_width = @divTrunc(working_width, 2);
+            working_height = @divTrunc(working_height, 2);
+        }
+
+        break :blk prog_ctx.start("Pixels", total);
+    };
+
     var chunks = getChunks(32, qan.*, alctr);
     defer alctr.free(chunks);
 
     const cpus = std.Thread.getCpuCount() catch unreachable;
-    const num_threads = @divTrunc(cpus * 3, 4) + 1;
+    const num_threads = @max(1, @divTrunc(cpus * 3, 4));
     std.debug.print("Using {} threads.\n", .{@min(num_threads, 16)});
 
     var threads_idle_buf = [_]bool{true} ** 16;
@@ -128,10 +136,17 @@ pub fn startRenderEngine(world: World, cam: Camera, qan: *Qanvas, alctr: std.mem
     while (true) {
         // find chunk that needs rendering
         const mchunk: ?*Chunk = blk: {
+            var biggest_chunk: ?*Chunk = null;
+            var biggest_pixel_size: i64 = 0;
+
             for (chunks) |*chunk| {
-                if (!chunk.done) break :blk chunk;
+                if (chunk.pixel_size > biggest_pixel_size) {
+                    biggest_chunk = chunk;
+                    biggest_pixel_size = chunk.pixel_size;
+                }
             }
-            break :blk null;
+
+            break :blk biggest_chunk;
         };
 
         // start thread on chunk
@@ -149,14 +164,15 @@ pub fn startRenderEngine(world: World, cam: Camera, qan: *Qanvas, alctr: std.mem
                 // start thread
                 threads_idle[ti] = false;
                 threads_alctrs[ti].reset();
-                chunk.done = true;
                 var thr = std.Thread.spawn(.{}, render, .{
-                    world,             cam,                            qan,
-                    prog,              threads_alctrs[ti].allocator(), chunk.start_x,
-                    chunk.end_x,       chunk.start_y,                  chunk.end_y,
-                    &threads_idle[ti],
+                    world,            cam,                            qan,
+                    prog,             threads_alctrs[ti].allocator(), chunk.start_x,
+                    chunk.end_x,      chunk.start_y,                  chunk.end_y,
+                    chunk.pixel_size, &threads_idle[ti],
                 }) catch unreachable;
                 thr.detach();
+
+                chunk.pixel_size = chunk.pixel_size >> 1;
             } else {
                 // wait and try again
                 std.time.sleep(1_000);
@@ -199,26 +215,23 @@ fn render(
     end_x: i64,
     start_y: i64,
     end_y: i64,
-    done_flag: *bool,
+    pixel_size: i64,
+    thread_done_flag: *bool,
 ) void {
-    defer done_flag.* = true;
+    defer thread_done_flag.* = true;
 
-    {
-        var pix_y: i64 = start_y;
-        while (pix_y < end_y) : (pix_y += 1) {
-            var pix_x: i64 = start_x;
-            while (pix_x < end_x) : (pix_x += 1) {
-                qan.write(Color.init(1, 0, 1), pix_x, pix_y);
-            }
-        }
-    }
+    // draw dots
+    const magenta = Color.init(1, 0, 1);
+    qan.fill(start_x, start_y, 1, end_y - start_y, magenta);
+    qan.fill(start_x, end_y - 1, end_x - start_x, 1, magenta);
 
     var pix_y: i64 = start_y;
-    while (pix_y < end_y) : (pix_y += 1) {
+    while (pix_y < end_y) : (pix_y += pixel_size) {
         var pix_x: i64 = start_x;
-        while (pix_x < end_x) : (pix_x += 1) {
+        while (pix_x < end_x) : (pix_x += pixel_size) {
             // 5 reflections
-            qan.write(world.colorAt(cam.rayForPixel(pix_x, pix_y), alctr, 5), pix_x, pix_y);
+            const color = world.colorAt(cam.rayForPixel(pix_x, pix_y), alctr, 5);
+            qan.fill(pix_x, pix_y, pixel_size, pixel_size, color);
             prog.completeOne();
         }
     }

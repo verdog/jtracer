@@ -1,5 +1,5 @@
 CAMERA
-scale 0.5
+scale 1
 width 1200
 height 800
 fov pi/2.5

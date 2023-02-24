@@ -10,12 +10,14 @@ pub const Qanvas = struct {
     height: usize,
     pixels: []Color,
     alctr: std.mem.Allocator,
+    background_color: Color,
 
     pub fn init(alctr: std.mem.Allocator, width: usize, height: usize) !This {
         var q = Qanvas{
             .width = width,
             .height = height,
             .pixels = try alctr.alloc(Color, width * height),
+            .background_color = Color.init(0.5, 0.5, 0.5),
             .alctr = alctr,
         };
 
@@ -24,18 +26,9 @@ pub const Qanvas = struct {
         return q;
     }
 
-    pub fn backgroundColor(_: This, x: i64, y: i64) Color {
-        // checkerboard pattern
-        return if (@divTrunc(x, 64) & 1 == @divTrunc(y, 64) & 1)
-            Color.init(0.1, 0.1, 0.1)
-        else
-            Color.init(0, 0, 0);
-    }
-
     pub fn clear(self: *This) void {
         for (self.pixels) |*qix| {
-            // const xy = self.ithPixelCoords(i);
-            qix.* = Color.init(0.5, 0.5, 0.5);
+            qix.* = self.background_color;
         }
     }
 
@@ -62,6 +55,21 @@ pub const Qanvas = struct {
         if (idx < 0 or idx >= @intCast(i64, self.pixels.len)) return;
 
         self.pixels[@intCast(usize, idx)] = color;
+    }
+
+    pub fn fill(self: This, x: i64, y: i64, width: i64, height: i64, color: Color) void {
+        if (width <= 0 or height <= 0) return;
+
+        const start_x: u64 = @intCast(u64, @max(0, x));
+        const start_y: u64 = @intCast(u64, @max(0, y));
+        const end_x: u64 = @intCast(u64, @min(@intCast(i64, self.width) - 1, x + width - 1));
+        const end_y: u64 = @intCast(u64, @min(@intCast(i64, self.height) - 1, y + height - 1));
+
+        for (start_y..end_y + 1) |y_pix| {
+            for (start_x..end_x + 1) |x_pix| {
+                self.write(color, @intCast(i64, x_pix), @intCast(i64, y_pix));
+            }
+        }
     }
 
     const This = @This();
@@ -124,4 +132,33 @@ test "ithPixelCoords" {
 
     try expect(q.ithPixelCoords(63).x == 31);
     try expect(q.ithPixelCoords(63).y == 1);
+}
+
+test "fill" {
+    var alloc = std.testing.allocator;
+    var q = try Qanvas.init(alloc, 64, 64);
+    defer q.deinit();
+
+    const blue = Color.init(0, 0, 1);
+
+    q.fill(0, 0, 32, 32, blue);
+
+    try expect(q.at(0, 0).equals(blue));
+    try expect(q.at(31, 31).equals(blue));
+    try expect(q.at(63, 63).equals(q.background_color));
+}
+
+test "fill oob" {
+    var alloc = std.testing.allocator;
+    var q = try Qanvas.init(alloc, 64, 64);
+    defer q.deinit();
+
+    const blue = Color.init(0, 0, 1);
+
+    q.fill(-16, -16, 32, 32, blue);
+
+    try expect(q.at(0, 0).equals(blue));
+    try expect(q.at(15, 15).equals(blue));
+    try expect(q.at(31, 31).equals(q.background_color));
+    try expect(q.at(63, 63).equals(q.background_color));
 }
