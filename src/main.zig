@@ -24,7 +24,15 @@ const gpa = gpa_impl.allocator();
 pub fn main() !void {
     defer if (!gpa_impl.detectLeaks()) std.debug.print("(No leaks)\n", .{});
 
-    const filename = "scenes/demo_scene.txt";
+    const filename = blk: {
+        if (std.os.argv.len > 1) {
+            break :blk std.mem.span(std.os.argv[1]);
+        }
+
+        const default_scene_file = "scenes/demo_scene.txt";
+        std.debug.print("No scene file specified, using {s}.\n", .{default_scene_file});
+        break :blk default_scene_file;
+    };
     const scene_file = file.parseWorldFile(filename, gpa) catch |e| switch (e) {
         error.FileNotFound => {
             std.debug.print("File not found: \"{s}\".\n", .{filename});
