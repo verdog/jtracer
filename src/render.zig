@@ -49,6 +49,43 @@ fn getChunks(w: i64, qan: Qanvas, alctr: std.mem.Allocator) []Chunk {
         }
     }
 
+    const closeToCenter = struct {
+        fn f(qan_ctx: Qanvas, lhs: Chunk, rhs: Chunk) bool {
+            const center_left = .{
+                .x = @divTrunc(lhs.start_x + lhs.end_x, 2),
+                .y = @divTrunc(lhs.start_y + lhs.end_y, 2),
+            };
+            const center_right = .{
+                .x = @divTrunc(rhs.start_x + rhs.end_x, 2),
+                .y = @divTrunc(rhs.start_y + rhs.end_y, 2),
+            };
+            const center_canvas = .{
+                .x = @intCast(i64, @divTrunc(qan_ctx.width, 2)),
+                .y = @intCast(i64, @divTrunc(qan_ctx.height, 2)),
+            };
+
+            const left_distance = blk: {
+                const dx = @intToFloat(f64, center_left.x - center_canvas.x);
+                const dy = @intToFloat(f64, center_left.y - center_canvas.y);
+                break :blk @sqrt(dx * dx + dy * dy);
+            };
+            const right_distance = blk: {
+                const dx = @intToFloat(f64, center_right.x - center_canvas.x);
+                const dy = @intToFloat(f64, center_right.y - center_canvas.y);
+                break :blk @sqrt(dx * dx + dy * dy);
+            };
+
+            return left_distance < right_distance;
+        }
+    }.f;
+
+    // sort chunks by distance from center to attempt to render the focus of the image first
+    std.sort.sort(Chunk, chunks.items, qan, closeToCenter);
+
+    // var prng = std.rand.DefaultPrng.init(0);
+    // var random = prng.random();
+    // random.shuffle(Chunk, chunks);
+
     return chunks.toOwnedSlice() catch unreachable;
 }
 
@@ -60,10 +97,6 @@ pub fn startRenderEngine(world: World, cam: Camera, qan: *Qanvas, alctr: std.mem
     // TODO base this size on cache size?
     var chunks = getChunks(32, qan.*, alctr);
     defer alctr.free(chunks);
-
-    // var prng = std.rand.DefaultPrng.init(0);
-    // var random = prng.random();
-    // random.shuffle(Chunk, chunks);
 
     const cpus = std.Thread.getCpuCount() catch unreachable;
     const num_threads = @divTrunc(cpus * 3, 4) + 1;

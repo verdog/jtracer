@@ -33,6 +33,7 @@ pub fn main() !void {
         std.debug.print("No scene file specified, using {s}.\n", .{default_scene_file});
         break :blk default_scene_file;
     };
+
     const scene_file = file.parseWorldFile(filename, gpa) catch |e| switch (e) {
         error.FileNotFound => {
             std.debug.print("File not found: \"{s}\".\n", .{filename});
