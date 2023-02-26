@@ -267,6 +267,81 @@ pub const Triangle = struct {
     const This = @This();
 };
 
+pub const SmoothTriangle = struct {
+    //! A triangle with interpolated vertex normals.
+
+    p1: Tuple, // points
+    p2: Tuple,
+    p3: Tuple,
+    n1: Tuple, // vertex normals
+    n2: Tuple,
+    n3: Tuple,
+    e1: Tuple, // triangle vectors
+    e2: Tuple,
+
+    transform: trans.Transform,
+    material: Material,
+
+    pub fn init(
+        p1: Tuple,
+        p2: Tuple,
+        p3: Tuple,
+        n1: Tuple,
+        n2: Tuple,
+        n3: Tuple,
+    ) This {
+        std.debug.assert(p1.isPoint());
+        std.debug.assert(p2.isPoint());
+        std.debug.assert(p3.isPoint());
+        std.debug.assert(n1.isVector());
+        std.debug.assert(n2.isVector());
+        std.debug.assert(n3.isVector());
+
+        const e1 = p2.minus(p1);
+        const e2 = p3.minus(p1);
+
+        std.debug.assert(e1.isVector());
+        std.debug.assert(e2.isVector());
+
+        return .{
+            .p1 = p1,
+            .p2 = p2,
+            .p3 = p3,
+            .n1 = n1,
+            .n2 = n2,
+            .n3 = n3,
+            .e1 = e1,
+            .e2 = e2,
+            .transform = trans.Transform{},
+            .material = Material.init(),
+        };
+    }
+
+    pub fn normalAt(self: This, world_space_point: Tuple, u: f64, v: f64) Tuple {
+        // only depends on uv
+        _ = world_space_point;
+
+        const obj_space_normal = self.n2.scaled(u).plus(self.n3.scaled(v)).plus(self.n1.scaled(1 - u - v));
+
+        // back to world space
+        var world_space_normal = self.transform.inverse.transposed().mult(obj_space_normal);
+        // hack: technically we should multiply by submatrix(self.transform, 3, 3), to avoid
+        //       messing up the w component of the resulting vector. we can get away with
+        //       the above as long as we set the w component back to 0 manually
+        world_space_normal.vec[3] = 0;
+
+        return world_space_normal.normalized();
+    }
+
+    pub fn equals(self: This, other: This) bool {
+        return self.p1.equals(other.p1) and
+            self.p2.equals(other.p2) and
+            self.p3.equals(other.p3);
+    }
+
+    const This = @This();
+};
+
 test "The normal of a plane is constant everywhere" {
     const p = Plane.init();
 
@@ -610,6 +685,23 @@ test "The normal vector on a triangle is the same everywhere" {
     try expect(t.normalAt(Point.init(0, 0.5, 0)).equals(t.normal));
     try expect(t.normalAt(Point.init(-0.5, 0.75, 0)).equals(t.normal));
     try expect(t.normalAt(Point.init(0.5, 0.25, 0)).equals(t.normal));
+}
+
+pub fn test_getSmoothTri() SmoothTriangle {
+    return SmoothTriangle.init(
+        Point.init(0, 1, 0),
+        Point.init(-1, 0, 0),
+        Point.init(1, 0, 0),
+        Vector.init(0, 1, 0),
+        Vector.init(-1, 0, 0),
+        Vector.init(1, 0, 0),
+    );
+}
+
+test "Constructing a smooth triangle" {
+    // test that a constructor exists and works
+    const tri = test_getSmoothTri();
+    _ = tri;
 }
 
 const std = @import("std");

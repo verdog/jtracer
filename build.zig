@@ -10,7 +10,7 @@ pub fn build(b: *std.build.Builder) void {
 
     // Standard release options allow the person running `zig build` to select
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
-    const mode = b.standardOptimizeOption(.{});
+    const optimize = b.standardOptimizeOption(.{});
 
     const SDL = SDLSdk.init(b, null);
 
@@ -18,7 +18,7 @@ pub fn build(b: *std.build.Builder) void {
         .name = "jtracer",
         .root_source_file = .{ .path = "src/main.zig" },
         .target = target,
-        .optimize = mode,
+        .optimize = optimize,
     });
     exe.emit_docs = .emit;
     exe.setMainPkgPath("./src");
@@ -42,7 +42,7 @@ pub fn build(b: *std.build.Builder) void {
     var ts = b.addTest(.{
         .root_source_file = .{ .path = "src/main.zig" },
         .target = target,
-        .optimize = mode,
+        .optimize = optimize,
     });
     test_step.dependOn(&ts.step);
 }

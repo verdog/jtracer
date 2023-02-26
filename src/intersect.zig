@@ -99,8 +99,22 @@ pub const Intersection = struct {
     t: f64,
     vptr: VolPtr,
 
+    // TODO make these more data-oriented? they are only relevant to triangles.
+    /// uv values for triangle intersections
+    u: ?f64 = null,
+    v: ?f64 = null,
+
     pub fn init(t: f64, vptr: VolPtr) This {
         return .{ .t = t, .vptr = vptr };
+    }
+
+    pub fn initUV(t: f64, vptr: VolPtr, u: f64, v: f64) This {
+        std.debug.assert(u >= 0);
+        std.debug.assert(u <= 1);
+        std.debug.assert(v >= 0);
+        std.debug.assert(v <= 1);
+
+        return .{ .t = t, .vptr = vptr, .u = u, .v = v };
     }
 
     pub fn equals(self: This, other: This) bool {
@@ -169,7 +183,16 @@ pub const Intersections = struct {
             },
             vol.Triangle => {
                 std.debug.assert(std.meta.activeTag(vptr) == .triangle_idx);
-                self.intersectTriangle(vptr, volu, ray);
+                // smooth == false
+                self.intersectTriangle(vptr, volu, ray, false);
+            },
+            vol.SmoothTriangle => {
+                std.debug.assert(std.meta.activeTag(vptr) == .smooth_triangle_idx);
+                // convert to flat triangle for intersection calc
+                var flat = vol.Triangle.init(volu.p1, volu.p2, volu.p3);
+                flat.transform = volu.transform;
+                // smooth == true
+                self.intersectTriangle(vptr, flat, ray, true);
             },
             else => unreachable,
         }
@@ -353,7 +376,10 @@ pub const Intersections = struct {
         }
     }
 
-    fn intersectTriangle(self: *This, vptr: VolPtr, tri: vol.Triangle, ray: Ray) void {
+    fn intersectTriangle(self: *This, vptr: VolPtr, tri: vol.Triangle, ray: Ray, smooth: bool) void {
+        // the difference between a flat triangle intersection and a smooth on is that the
+        // smooth triangle intersection stores the calculated uv values in the
+        // intersection.
         const td_ray = ray.transformed(tri.transform.inverse);
 
         const dir_x_e2 = td_ray.direction.cross(tri.e2);
@@ -372,7 +398,11 @@ pub const Intersections = struct {
         if (v < 0 or u + v > 1) return; // misses over p1-p2 or p2-p3 edge
 
         // a hit
-        self.ixs.append(Intersection.init(f * tri.e2.dot(origin_cross_e1), vptr)) catch @panic("OOM");
+        if (!smooth) {
+            self.ixs.append(Intersection.init(f * tri.e2.dot(origin_cross_e1), vptr)) catch @panic("OOM");
+        } else {
+            self.ixs.append(Intersection.initUV(f * tri.e2.dot(origin_cross_e1), vptr, u, v)) catch @panic("OOM");
+        }
     }
 
     pub fn clear(self: *This) void {
@@ -1169,6 +1199,46 @@ test "A ray hits a triangle" {
 
     try expect(xs.ixs.items.len == 1);
     try expect(xs.ixs.items[0].t == 2);
+}
+
+test "An intersection with uv" {
+    const tptr = VolPtr{ .smooth_triangle_idx = 0 };
+
+    const i = Intersection.initUV(3.5, tptr, 0.2, 0.4);
+
+    try expect(std.math.approxEqAbs(f64, i.u.?, 0.2, mymath.floatTolerance));
+    try expect(std.math.approxEqAbs(f64, i.v.?, 0.4, mymath.floatTolerance));
+}
+
+test "An interection with a smooth triangle stores uv" {
+    const tri = vol.test_getSmoothTri();
+    const tptr = VolPtr{ .smooth_triangle_idx = 0 };
+
+    const r = Ray.init(Point.init(-0.2, 0.3, -2), Vector.init(0, 0, 1));
+
+    var xs = Intersections.init(std.testing.allocator, .{});
+    defer xs.deinit();
+
+    xs.intersect(tri, tptr, r);
+
+    try expect(xs.ixs.items.len == 1);
+    try expect(xs.ixs.items[0].u != null);
+    try expect(xs.ixs.items[0].v != null);
+    errdefer std.debug.print("u: {} v: {}\n", .{ xs.ixs.items[0].u.?, xs.ixs.items[0].v.? });
+    try expect(std.math.approxEqAbs(f64, xs.ixs.items[0].u.?, 0.45, mymath.floatTolerance));
+    try expect(std.math.approxEqAbs(f64, xs.ixs.items[0].v.?, 0.25, mymath.floatTolerance));
+}
+
+test "A smooth triangle interpolates the normal with uv" {
+    const tri = vol.test_getSmoothTri();
+    const tptr = VolPtr{ .smooth_triangle_idx = 0 };
+
+    const i = Intersection.initUV(1, tptr, 0.45, 0.25);
+    const n = tri.normalAt(Point.init(0, 0, 0), i.u.?, i.v.?);
+
+    errdefer print(n);
+
+    try expect(n.equals(Vector.init(-0.5547001962252291, 0.8320502943378437, 0)));
 }
 
 const std = @import("std");

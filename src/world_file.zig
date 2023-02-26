@@ -25,6 +25,7 @@ const FileSection = struct {
         cube: Cube,
         cylinder: Cylinder,
         triangle: Triangle,
+        smooth_triangle: SmoothTriangle,
     };
 
     pub fn inits(text: []const u8, alctr: std.mem.Allocator) ![]This {
@@ -91,6 +92,7 @@ const FileSection = struct {
                 // find materials or transforms
                 var mat = Material.init();
                 var tran = Transform{};
+                var flat = false;
                 {
                     var lines = std.mem.tokenize(u8, text, "\n");
                     while (lines.next()) |line| {
@@ -98,15 +100,31 @@ const FileSection = struct {
                             try parseAndApplyMaterial(line, &mat);
                         } else if (std.mem.startsWith(u8, line, "transform")) {
                             try parseAndApplyTransform(line, &tran);
+                        } else if (std.mem.startsWith(u8, line, "flat")) {
+                            flat = try parseKeyValue(bool, line);
                         }
                     }
                 }
 
-                // add each triangle
                 for (obj.triangles) |*tri| {
                     tri.material = mat;
                     tri.transform = tran;
                     try result_data.append(.{ .triangle = tri.* });
+                }
+
+                for (obj.smooth_triangles) |*stri| {
+                    if (flat) {
+                        // if flat is specified, add all smooth triangles as flat
+                        // triangles
+                        var flat_tri = Triangle.init(stri.p1, stri.p2, stri.p3);
+                        flat_tri.material = mat;
+                        flat_tri.transform = tran;
+                        try result_data.append(.{ .triangle = flat_tri });
+                    } else {
+                        stri.material = mat;
+                        stri.transform = tran;
+                        try result_data.append(.{ .smooth_triangle = stri.* });
+                    }
                 }
             } else {
                 unreachable;
@@ -168,6 +186,11 @@ const FileSection = struct {
                 new_triangle.ptr.* = t;
                 self.vptr = new_triangle.handle;
             },
+            .smooth_triangle => |st| {
+                var new_striangle = world.addVolume(SmoothTriangle);
+                new_striangle.ptr.* = st;
+                self.vptr = new_striangle.handle;
+            },
         }
     }
 
@@ -185,7 +208,9 @@ const FileContents = struct {
 const ParsedObj = struct {
     ignored_lines: usize,
     vertices: []Tuple,
+    vertex_normals: []Tuple,
     triangles: []Triangle,
+    smooth_triangles: []SmoothTriangle,
     alctr: std.mem.Allocator,
 
     pub fn init(txt: []const u8, alctr: std.mem.Allocator) !This {
@@ -193,7 +218,9 @@ const ParsedObj = struct {
 
         var ignored_lines: usize = 0;
         var verts = std.ArrayList(Tuple).init(alctr);
+        var vert_normals = std.ArrayList(Tuple).init(alctr);
         var tris = std.ArrayList(Triangle).init(alctr);
+        var smooth_tris = std.ArrayList(SmoothTriangle).init(alctr);
 
         while (lines.next()) |line| {
             // std.debug.print("/{s}/\n", .{line});
@@ -211,6 +238,20 @@ const ParsedObj = struct {
                 const p3 = try std.fmt.parseFloat(f64, p3_txt);
 
                 try verts.append(Point.init(p1, p2, p3));
+            } else if (std.mem.startsWith(u8, line, "vn ")) {
+                var nums = std.mem.tokenize(u8, line, " ");
+                _ = nums.next(); // "vn"
+
+                const n1_txt = nums.next() orelse return unimplementedError();
+                const n2_txt = nums.next() orelse return unimplementedError();
+                const n3_txt = nums.next() orelse return unimplementedError();
+
+                // std.debug.print("/{s}/{s}/{s}/\n", .{ p1_txt, p2_txt, p3_txt });
+                const n1 = try std.fmt.parseFloat(f64, n1_txt);
+                const n2 = try std.fmt.parseFloat(f64, n2_txt);
+                const n3 = try std.fmt.parseFloat(f64, n3_txt);
+
+                try vert_normals.append(Vector.init(n1, n2, n3));
             } else if (std.mem.startsWith(u8, line, "f ")) {
                 const data = line[2..];
                 var nums = std.mem.tokenize(u8, data, " ");
@@ -220,26 +261,39 @@ const ParsedObj = struct {
 
                 const p1_idx_txt = nums.next() orelse return unimplementedError();
                 const p1_idc = try parseVertex(p1_idx_txt);
-                const p1_v_idx = p1_idc.vertex_idx;
 
                 var p2_idx_txt = nums.next() orelse return unimplementedError();
                 var p2_idc = try parseVertex(p2_idx_txt);
-                var p2_v_idx = p2_idc.vertex_idx;
 
                 var p3_idx_txt_maybe = nums.next();
 
                 while (p3_idx_txt_maybe) |p3_idx_txt| {
                     var p3_idc = try parseVertex(p3_idx_txt);
-                    var p3_v_idx = p3_idc.vertex_idx;
 
-                    try tris.append(Triangle.init(
-                        verts.items[p1_v_idx],
-                        verts.items[p2_v_idx],
-                        verts.items[p3_v_idx],
-                    ));
+                    if (p1_idc.normal_idx != null and
+                        p2_idc.normal_idx != null and
+                        p3_idc.normal_idx != null)
+                    {
+                        // smooth triangle
+                        try smooth_tris.append(SmoothTriangle.init(
+                            verts.items[p1_idc.vertex_idx],
+                            verts.items[p2_idc.vertex_idx],
+                            verts.items[p3_idc.vertex_idx],
+                            vert_normals.items[p1_idc.normal_idx.?],
+                            vert_normals.items[p2_idc.normal_idx.?],
+                            vert_normals.items[p3_idc.normal_idx.?],
+                        ));
+                    } else {
+                        // flat triangle
+                        try tris.append(Triangle.init(
+                            verts.items[p1_idc.vertex_idx],
+                            verts.items[p2_idc.vertex_idx],
+                            verts.items[p3_idc.vertex_idx],
+                        ));
+                    }
 
                     // get next idx in the case of > 3 points
-                    p2_v_idx = p3_v_idx;
+                    p2_idc = p3_idc;
                     p3_idx_txt_maybe = nums.next();
                 }
             } else {
@@ -251,14 +305,16 @@ const ParsedObj = struct {
         return This{
             .ignored_lines = ignored_lines,
             .vertices = try verts.toOwnedSlice(),
+            .vertex_normals = try vert_normals.toOwnedSlice(),
             .triangles = try tris.toOwnedSlice(),
+            .smooth_triangles = try smooth_tris.toOwnedSlice(),
             .alctr = alctr,
         };
     }
 
     fn parseVertex(txt: []const u8) !struct {
         vertex_idx: usize,
-        normal_idx: usize, // TODO
+        normal_idx: ?usize,
     } {
         // the data in f commands can come in a few forms:
         //   f 1 2 3
@@ -275,16 +331,21 @@ const ParsedObj = struct {
         _ = items.next(); // second item unused in this renderer
         const item_3_txt = items.next();
 
+        // .obj files are 1-indexed, so we subtract 1 from the parsed idx
+        const vert_idx = try std.fmt.parseInt(usize, item_1_txt, 10) - 1;
+        const normal_idx = if (item_3_txt) |i3t| try std.fmt.parseInt(usize, i3t, 10) - 1 else null;
+
         return .{
-            // .obj files are 1-indexed, so we subtract 1 from the parsed idx
-            .vertex_idx = try std.fmt.parseInt(usize, item_1_txt, 10) - 1,
-            .normal_idx = try std.fmt.parseInt(usize, item_3_txt orelse "1", 10) - 1,
+            .vertex_idx = vert_idx,
+            .normal_idx = normal_idx,
         };
     }
 
     pub fn deinit(self: *This) void {
         self.alctr.free(self.vertices);
+        self.alctr.free(self.vertex_normals);
         self.alctr.free(self.triangles);
+        self.alctr.free(self.smooth_triangles);
     }
 
     const This = @This();
@@ -1830,6 +1891,11 @@ test "Obj: parse polygons: complex faces" {
         \\v 1 1 0
         \\v 0 2 0
         \\
+        \\vn 0 2 0
+        \\vn 0 2 0
+        \\vn 0 2 0
+        \\vn 0 2 0
+        \\
         \\f 1//1 2//2 3/3/3 4/4/4 5
     ;
 
@@ -1845,18 +1911,26 @@ test "Obj: parse polygons: complex faces" {
     try ex(obj.vertices[4].equals(Point.init(0, 2, 0)));
 
     // parser will triangulate the polygon
-    try exEq(@as(usize, 3), obj.triangles.len);
-    try ex(obj.triangles[0].equals(Triangle.init(
+    try exEq(@as(usize, 2), obj.smooth_triangles.len);
+    try ex(obj.smooth_triangles[0].equals(SmoothTriangle.init(
         obj.vertices[0],
         obj.vertices[1],
         obj.vertices[2],
+        obj.vertex_normals[0],
+        obj.vertex_normals[1],
+        obj.vertex_normals[2],
     )));
-    try ex(obj.triangles[1].equals(Triangle.init(
+    try ex(obj.smooth_triangles[1].equals(SmoothTriangle.init(
         obj.vertices[0],
         obj.vertices[2],
         obj.vertices[3],
+        obj.vertex_normals[0],
+        obj.vertex_normals[2],
+        obj.vertex_normals[3],
     )));
-    try ex(obj.triangles[2].equals(Triangle.init(
+
+    try exEq(@as(usize, 1), obj.triangles.len);
+    try ex(obj.triangles[0].equals(Triangle.init(
         obj.vertices[0],
         obj.vertices[3],
         obj.vertices[4],
@@ -1970,6 +2044,70 @@ test "obj: parent" {
     try ex(world.triangles_buf.items[2].transform.t.equals(trans.makeTranslation(0, 1, 0).t));
 }
 
+test "obj: parse vertex normals" {
+    const txt =
+        \\vn 0 0 1
+        \\vn 0.707 0 -0.707
+        \\vn 1 2 3
+    ;
+
+    const alctr = std.testing.allocator;
+    var obj = try parseObj(txt, alctr);
+    defer obj.deinit();
+
+    try exEq(@as(usize, 3), obj.vertex_normals.len);
+    try ex(obj.vertex_normals[0].equals(Vector.init(0, 0, 1)));
+    try ex(obj.vertex_normals[1].equals(Vector.init(0.707, 0, -0.707)));
+    try ex(obj.vertex_normals[2].equals(Vector.init(1, 2, 3)));
+}
+
+test "obj: parse vertex normals" {
+    const txt =
+        \\v 0 1 0
+        \\v -1 0 0
+        \\v 1 0 0
+        \\
+        \\vn -1 0 0
+        \\vn 1 0 0
+        \\vn 0 1 0
+        \\
+        \\f 1//3 2//1 3//2
+        \\f 1/0/3 2/102/1 3/14/2
+    ;
+
+    const alctr = std.testing.allocator;
+    var obj = try parseObj(txt, alctr);
+    defer obj.deinit();
+
+    try exEq(@as(usize, 3), obj.vertices.len);
+    try ex(obj.vertices[0].equals(Point.init(0, 1, 0)));
+    try ex(obj.vertices[1].equals(Point.init(-1, 0, 0)));
+    try ex(obj.vertices[2].equals(Point.init(1, 0, 0)));
+
+    try exEq(@as(usize, 3), obj.vertex_normals.len);
+    try ex(obj.vertex_normals[0].equals(Vector.init(-1, 0, 0)));
+    try ex(obj.vertex_normals[1].equals(Vector.init(1, 0, 0)));
+    try ex(obj.vertex_normals[2].equals(Vector.init(0, 1, 0)));
+
+    try exEq(@as(usize, 2), obj.smooth_triangles.len);
+    try ex(obj.smooth_triangles[0].equals(SmoothTriangle.init(
+        obj.vertices[0],
+        obj.vertices[1],
+        obj.vertices[2],
+        obj.vertex_normals[2],
+        obj.vertex_normals[0],
+        obj.vertex_normals[1],
+    )));
+    try ex(obj.smooth_triangles[1].equals(SmoothTriangle.init(
+        obj.vertices[0],
+        obj.vertices[1],
+        obj.vertices[2],
+        obj.vertex_normals[2],
+        obj.vertex_normals[0],
+        obj.vertex_normals[1],
+    )));
+}
+
 const std = @import("std");
 const trans = @import("transform.zig");
 const mate = @import("material.zig");
@@ -1996,5 +2134,6 @@ const Sphere = @import("volume.zig").Sphere;
 const Cylinder = @import("volume.zig").Cylinder;
 const Cone = @import("volume.zig").Cone;
 const Triangle = @import("volume.zig").Triangle;
+const SmoothTriangle = @import("volume.zig").SmoothTriangle;
 
 const VolumePtr = @import("world.zig").VolumePtr;

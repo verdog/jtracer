@@ -11,6 +11,7 @@ pub const World = struct {
             .cylinders_buf = std.ArrayList(vol.Cylinder).init(alctr),
             .cones_buf = std.ArrayList(vol.Cone).init(alctr),
             .triangles_buf = std.ArrayList(vol.Triangle).init(alctr),
+            .smooth_triangles_buf = std.ArrayList(vol.SmoothTriangle).init(alctr),
             .lights_buf = std.ArrayList(PointLight).init(alctr),
         };
     }
@@ -22,6 +23,7 @@ pub const World = struct {
         self.cylinders_buf.deinit();
         self.cones_buf.deinit();
         self.triangles_buf.deinit();
+        self.smooth_triangles_buf.deinit();
         self.lights_buf.deinit();
     }
 
@@ -35,6 +37,7 @@ pub const World = struct {
             vol.Cylinder => &self.cylinders_buf,
             vol.Cone => &self.cones_buf,
             vol.Triangle => &self.triangles_buf,
+            vol.SmoothTriangle => &self.smooth_triangles_buf,
             else => unreachable,
         };
 
@@ -43,6 +46,14 @@ pub const World = struct {
                 Point.init(0, 0, 0),
                 Point.init(0, 1, 0),
                 Point.init(1, 0, 0),
+            )) catch unreachable,
+            vol.SmoothTriangle => buf.append(T.init(
+                Point.init(0, 0, 0),
+                Point.init(0, 1, 0),
+                Point.init(1, 0, 0),
+                Vector.init(0, 0, -1),
+                Vector.init(0, 0, -1),
+                Vector.init(0, 0, -1),
             )) catch unreachable,
             else => buf.append(T.init()) catch unreachable,
         }
@@ -55,6 +66,7 @@ pub const World = struct {
             vol.Cylinder => VolumePtr{ .cylinder_idx = last },
             vol.Cone => VolumePtr{ .cone_idx = last },
             vol.Triangle => VolumePtr{ .triangle_idx = last },
+            vol.SmoothTriangle => VolumePtr{ .smooth_triangle_idx = last },
             else => unreachable,
         };
 
@@ -124,6 +136,7 @@ pub const World = struct {
             .cylinder_idx => return &@field(self.cylinders_buf.items[i], property),
             .cone_idx => return &@field(self.cones_buf.items[i], property),
             .triangle_idx => return &@field(self.triangles_buf.items[i], property),
+            .smooth_triangle_idx => return &@field(self.smooth_triangles_buf.items[i], property),
         };
     }
 
@@ -172,6 +185,11 @@ pub const World = struct {
 
         for (self.triangles_buf.items, 0..) |*ptr, i| {
             const vptr = VolumePtr{ .triangle_idx = @intCast(u16, i) };
+            ixs.intersect(ptr.*, vptr, ray);
+        }
+
+        for (self.smooth_triangles_buf.items, 0..) |*ptr, i| {
+            const vptr = VolumePtr{ .smooth_triangle_idx = @intCast(u16, i) };
             ixs.intersect(ptr.*, vptr, ray);
         }
     }
@@ -282,6 +300,7 @@ pub const World = struct {
                 .cylinder_idx => self.cylinders_buf.items[hit.idx()].normalAt(ray.position(hit.t)),
                 .cone_idx => self.cones_buf.items[hit.idx()].normalAt(ray.position(hit.t)),
                 .triangle_idx => self.triangles_buf.items[hit.idx()].normalAt(ray.position(hit.t)),
+                .smooth_triangle_idx => self.smooth_triangles_buf.items[hit.idx()].normalAt(ray.position(hit.t), hit.u.?, hit.v.?),
             };
 
             const bounds = ixs.findBoundaryObjects(hit);
@@ -311,6 +330,7 @@ pub const World = struct {
     cylinders_buf: std.ArrayList(vol.Cylinder),
     cones_buf: std.ArrayList(vol.Cone),
     triangles_buf: std.ArrayList(vol.Triangle),
+    smooth_triangles_buf: std.ArrayList(vol.SmoothTriangle),
     lights_buf: std.ArrayList(PointLight),
 
     const This = @This();
@@ -388,6 +408,7 @@ pub const VolumePtr = union(enum) {
     cylinder_idx: u16,
     cone_idx: u16,
     triangle_idx: u16,
+    smooth_triangle_idx: u16,
 
     pub fn idx(self: VolumePtr) u16 {
         return switch (self) {

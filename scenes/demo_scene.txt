@@ -31,10 +31,7 @@ transform translate (0,1,0)
 
 OBJ obj/teapot-low.obj
 material 3dchecker (0.6,0.2,0.2) (0.2,0.2,0.6)
-material transform scale (10,10,10)
-transform rotate x pi/-2
 transform rotate y pi/-4
-transform scale (0.1,0.1,0.1)
 transform translate (0,1,0)
 parent middle mirror
 
