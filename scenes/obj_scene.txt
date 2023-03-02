@@ -5,7 +5,7 @@ intensity (1,1,1)
 CAMERA
 width 400
 height 200
-scale 3
+scale 1
 fov pi/3
 from (0,4,-8)
 to (0,0,0)

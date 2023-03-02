@@ -15,6 +15,7 @@ const FileSection = struct {
     parent_name: ?[]const u8,
     vptr: ?VolumePtr = null,
     data: Data,
+    number: usize,
 
     const Data = union(enum) {
         camera: Camera,
@@ -28,7 +29,7 @@ const FileSection = struct {
         smooth_triangle: SmoothTriangle,
     };
 
-    pub fn inits(text: []const u8, alctr: std.mem.Allocator) ![]This {
+    pub fn inits(text: []const u8, alctr: std.mem.Allocator, number: usize) ![]This {
         const header = std.mem.sliceTo(text, '\n');
 
         const name = blk: {
@@ -76,9 +77,6 @@ const FileSection = struct {
             } else if (std.mem.startsWith(u8, header, "CYLINDER")) {
                 const datum = try parseCylinder(text);
                 try result_data.append(.{ .cylinder = datum });
-            } else if (std.mem.startsWith(u8, header, "TRIANGLE")) {
-                const datum = try parseTriangle(text);
-                try result_data.append(.{ .triangle = datum });
             } else if (std.mem.startsWith(u8, header, "OBJ")) {
                 // special case: OBJ sections should add a bunch of triange sections
                 var tokens = std.mem.tokenize(u8, header, " ");
@@ -143,6 +141,7 @@ const FileSection = struct {
                 .name = name,
                 .parent_name = parent_name,
                 .data = datum,
+                .number = number,
             };
         }
 
@@ -377,6 +376,7 @@ pub fn parseObjFile(filename: []const u8, alctr: std.mem.Allocator) !ParsedObj {
 pub fn parseWorldText(txt: []const u8, alctr: std.mem.Allocator) !FileContents {
     var world = World.init(alctr);
     var camera: ?Camera = null;
+
     var sections = try getTextSections(txt, alctr);
     defer sections.deinit();
 
@@ -389,6 +389,54 @@ pub fn parseWorldText(txt: []const u8, alctr: std.mem.Allocator) !FileContents {
     var tree = getVolumeTree(sections.items, alctr);
     defer tree.deinit();
     tree.applyTransforms(&world);
+
+    // get triangle blocks
+    var tri_blocks = getTriangleBlocks(sections.items, alctr);
+    defer alctr.free(tri_blocks);
+
+    // create AABBs
+    for (tri_blocks) |tblock| {
+        var bs = AABB.Bounds{
+            .min_x = std.math.floatMax(f64),
+            .min_y = std.math.floatMax(f64),
+            .min_z = std.math.floatMax(f64),
+            .max_x = std.math.floatMin(f64),
+            .max_y = std.math.floatMin(f64),
+            .max_z = std.math.floatMin(f64),
+        };
+        var transform: trans.Transform = undefined;
+        switch (tblock.buffer) {
+            .flat => {
+                // find extents in object space
+                for (world.triangles_buf.items[tblock.start..tblock.end]) |t| {
+                    bs.min_x = @min(std.math.min3(t.p1.x(), t.p2.x(), t.p3.x()), bs.min_x);
+                    bs.min_y = @min(std.math.min3(t.p1.y(), t.p2.y(), t.p3.y()), bs.min_y);
+                    bs.min_z = @min(std.math.min3(t.p1.z(), t.p2.z(), t.p3.z()), bs.min_z);
+                    bs.max_x = @max(std.math.max3(t.p1.x(), t.p2.x(), t.p3.x()), bs.max_x);
+                    bs.max_y = @max(std.math.max3(t.p1.y(), t.p2.y(), t.p3.y()), bs.max_y);
+                    bs.max_z = @max(std.math.max3(t.p1.z(), t.p2.z(), t.p3.z()), bs.max_z);
+                }
+                transform = world.triangles_buf.items[tblock.start].transform;
+            },
+            .smooth => {
+                for (world.smooth_triangles_buf.items[tblock.start..tblock.end]) |t| {
+                    bs.min_x = @min(std.math.min3(t.p1.x(), t.p2.x(), t.p3.x()), bs.min_x);
+                    bs.min_y = @min(std.math.min3(t.p1.y(), t.p2.y(), t.p3.y()), bs.min_y);
+                    bs.min_z = @min(std.math.min3(t.p1.z(), t.p2.z(), t.p3.z()), bs.min_z);
+                    bs.max_x = @max(std.math.max3(t.p1.x(), t.p2.x(), t.p3.x()), bs.max_x);
+                    bs.max_y = @max(std.math.max3(t.p1.y(), t.p2.y(), t.p3.y()), bs.max_y);
+                    bs.max_z = @max(std.math.max3(t.p1.z(), t.p2.z(), t.p3.z()), bs.max_z);
+                }
+                transform = world.smooth_triangles_buf.items[tblock.start].transform;
+            },
+        }
+
+        // var cube = world.addVolume(Cube);
+        // cube.ptr.bounds = bs;
+        // cube.ptr.transform = transform;
+        // cube.ptr.material.transparency = 0.99;
+        // cube.ptr.material.diffuse = 0.1;
+    }
 
     if (camera == null) return unimplementedError();
 
@@ -407,10 +455,13 @@ fn getTextSections(txt: []const u8, alctr: std.mem.Allocator) !std.ArrayList(Fil
     var remaining = txt;
     var chunk_idxs = findSectionBounds(remaining);
 
+    var section_number: usize = 0;
+
     while (chunk_idxs.min) |min| {
         const chunk = remaining[min..chunk_idxs.max];
 
-        const parsed_sections = try FileSection.inits(chunk, alctr);
+        const parsed_sections = try FileSection.inits(chunk, alctr, section_number);
+        section_number += 1;
         defer alctr.free(parsed_sections);
 
         for (parsed_sections) |section| {
@@ -528,13 +579,66 @@ fn getVolumeTree(sections: []FileSection, alctr: std.mem.Allocator) VolumeTree {
     };
 }
 
+const TriangleBlock = struct {
+    const Buffer = enum {
+        flat,
+        smooth,
+    };
+
+    start: usize,
+    end: usize,
+    buffer: Buffer,
+};
+
+// scan the file section for blocks of triangles or smooth triangles and produce a
+// list of AABBs enclosing each group of obj file triangles.
+fn getTriangleBlocks(sections: []FileSection, alctr: std.mem.Allocator) []TriangleBlock {
+    var result = std.ArrayList(TriangleBlock).init(alctr);
+
+    var start_it: usize = 0;
+    var end_it: usize = 0;
+
+    var next_flat_idx: usize = 0;
+    var next_smooth_idx: usize = 0;
+
+    while (start_it < sections.len) : (start_it = end_it) {
+        // find block bounds. scan forward until off the list or different section number
+        while (end_it < sections.len and sections[start_it].number == sections[end_it].number)
+            end_it += 1;
+
+        var block = sections[start_it..end_it];
+
+        // if it's a triangle, figure out which buffer it will be in and make a block
+        switch (sections[start_it].data) {
+            .triangle => {
+                result.append(TriangleBlock{
+                    .start = next_flat_idx,
+                    .end = next_flat_idx + (block.len),
+                    .buffer = .flat,
+                }) catch unreachable;
+                next_flat_idx += (block.len);
+            },
+            .smooth_triangle => {
+                result.append(TriangleBlock{
+                    .start = next_smooth_idx,
+                    .end = next_smooth_idx + (block.len),
+                    .buffer = .smooth,
+                }) catch unreachable;
+                next_smooth_idx += (block.len);
+            },
+            else => {}, // skip non-triangle
+        }
+    }
+
+    return result.toOwnedSlice() catch unreachable;
+}
+
 fn findSectionBounds(txt: []const u8) struct { min: ?usize, max: usize } {
     const keys = [_][]const u8{
         "CAMERA", "POINTLIGHT",
         "SPHERE", "PLANE",
         "CUBE",   "CYLINDER",
-        "CONE",   "TRIANGLE",
-        "OBJ",
+        "CONE",   "OBJ",
     };
 
     var keys_idxs = [_]?usize{null} ** keys.len;
@@ -960,42 +1064,6 @@ fn parseCone(txt: []const u8) !Cone {
     }
 
     return cone;
-}
-
-fn parseTriangle(txt: []const u8) !Triangle {
-    var p1: ?@"3Tuple" = null;
-    var p2: ?@"3Tuple" = null;
-    var p3: ?@"3Tuple" = null;
-    var mat = Material.init();
-    var transf = Transform{};
-
-    {
-        var lines = std.mem.tokenize(u8, txt, "\n");
-        while (lines.next()) |line| {
-            if (std.mem.startsWith(u8, line, "material")) {
-                try parseAndApplyMaterial(line, &mat);
-            } else if (std.mem.startsWith(u8, line, "transform")) {
-                try parseAndApplyTransform(line, &transf);
-            } else if (std.mem.startsWith(u8, line, "p1")) {
-                p1 = try parse3Tuple(line[3..]);
-            } else if (std.mem.startsWith(u8, line, "p2")) {
-                p2 = try parse3Tuple(line[3..]);
-            } else if (std.mem.startsWith(u8, line, "p3")) {
-                p3 = try parse3Tuple(line[3..]);
-            }
-        }
-    }
-
-    if (p1 == null or p2 == null or p3 == null) return unimplementedError();
-
-    var tri = Triangle.init(
-        Point.init(p1.?.a, p1.?.b, p1.?.c),
-        Point.init(p2.?.a, p2.?.b, p2.?.c),
-        Point.init(p3.?.a, p3.?.b, p3.?.c),
-    );
-    tri.transform = transf;
-    tri.material = mat;
-    return tri;
 }
 
 fn parseObj(txt: []const u8, alctr: std.mem.Allocator) !ParsedObj {
@@ -1479,10 +1547,6 @@ test "parse world (3)" {
         \\CUBE
         \\CUBE
         \\CUBE
-        \\TRIANGLE
-        \\p1 (0,0,0)
-        \\p2 (1,0,0)
-        \\p3 (0,1,0)
     ;
 
     const alctr = std.testing.allocator;
@@ -1493,7 +1557,6 @@ test "parse world (3)" {
     defer world.deinit();
 
     try exEq(@as(usize, 3), world.cubes_buf.items.len);
-    try exEq(@as(usize, 1), world.triangles_buf.items.len);
     try exEq(@as(i64, 300), camera.width);
     try exEq(@as(i64, 300), camera.height);
 }
@@ -1749,28 +1812,6 @@ test "parse parents: parser applies transforms: rotation" {
         }).t;
         try ex(world.spheres_buf.items[3].transform.t.equals(test_t_4));
     }
-}
-
-test "Parse triangle" {
-    const txt =
-        \\TRIANGLE
-        \\p1 (0,0,0)
-        \\p2 (1,0,0)
-        \\p3 (1,1,0)
-        \\transform translate (0,2,0)
-    ;
-
-    const tri = try parseTriangle(txt);
-
-    try ex(tri.p1.equals(Point.init(0, 0, 0)));
-    try ex(tri.p2.equals(Point.init(1, 0, 0)));
-    try ex(tri.p3.equals(Point.init(1, 1, 0)));
-
-    // chain applies transforms in reverse order
-    const t = (trans.Transform{}).chain(.{
-        trans.makeTranslation(0, 2, 0),
-    });
-    try ex(tri.transform.t.equals(t.t));
 }
 
 test "Obj: Ignore unrecognized lines" {
@@ -2129,6 +2170,7 @@ const World = @import("world.zig").World;
 const Camera = @import("world.zig").Camera;
 const PointLight = @import("light.zig").PointLight;
 const Cube = @import("volume.zig").Cube;
+const AABB = @import("volume.zig").AABB;
 const Plane = @import("volume.zig").Plane;
 const Sphere = @import("volume.zig").Sphere;
 const Cylinder = @import("volume.zig").Cylinder;

@@ -8,6 +8,7 @@ pub const World = struct {
             .spheres_buf = std.ArrayList(vol.Sphere).init(alctr),
             .planes_buf = std.ArrayList(vol.Plane).init(alctr),
             .cubes_buf = std.ArrayList(vol.Cube).init(alctr),
+            .aabbs_buf = std.ArrayList(vol.AABB).init(alctr),
             .cylinders_buf = std.ArrayList(vol.Cylinder).init(alctr),
             .cones_buf = std.ArrayList(vol.Cone).init(alctr),
             .triangles_buf = std.ArrayList(vol.Triangle).init(alctr),
@@ -20,6 +21,7 @@ pub const World = struct {
         self.spheres_buf.deinit();
         self.planes_buf.deinit();
         self.cubes_buf.deinit();
+        self.aabbs_buf.deinit();
         self.cylinders_buf.deinit();
         self.cones_buf.deinit();
         self.triangles_buf.deinit();
@@ -34,6 +36,7 @@ pub const World = struct {
             vol.Sphere => &self.spheres_buf,
             vol.Plane => &self.planes_buf,
             vol.Cube => &self.cubes_buf,
+            vol.AABB => &self.aabbs_buf,
             vol.Cylinder => &self.cylinders_buf,
             vol.Cone => &self.cones_buf,
             vol.Triangle => &self.triangles_buf,
@@ -63,6 +66,7 @@ pub const World = struct {
             vol.Sphere => VolumePtr{ .sphere_idx = last },
             vol.Plane => VolumePtr{ .plane_idx = last },
             vol.Cube => VolumePtr{ .cube_idx = last },
+            vol.AABB => VolumePtr{ .aabb_idx = last },
             vol.Cylinder => VolumePtr{ .cylinder_idx = last },
             vol.Cone => VolumePtr{ .cone_idx = last },
             vol.Triangle => VolumePtr{ .triangle_idx = last },
@@ -92,23 +96,6 @@ pub const World = struct {
         }
     }
 
-    pub fn getVolume(self: This, vptr: VolumePtr, comptime T: type) *T {
-        return switch (std.meta.activeTag(vptr)) {
-            .sphere_idx => return &self.spheres_buf.items[vptr.idx()],
-            .plane_idx => return &self.planes_buf.items[vptr.idx()],
-            .cube_idx => return &self.cubes_buf.items[vptr.idx()],
-            .cylinder_idx => return &self.cylinders.items[vptr.idx()],
-            .cone_idx => return &self.cones_buf.items[vptr.idx()],
-        };
-    }
-
-    pub fn getLight(self: This, comptime T: type, lptr: LightPtr) *T {
-        return switch (T) {
-            PointLight => return &self.lights_buf.items[lptr.light_idx],
-            else => unreachable,
-        };
-    }
-
     /// Assumes that vol.Sphere defines what fields are available
     fn PropertyT(comptime name: []const u8) type {
         const fs = @typeInfo(vol.Sphere).Struct.fields;
@@ -133,6 +120,7 @@ pub const World = struct {
             .sphere_idx => return &@field(self.spheres_buf.items[i], property),
             .plane_idx => return &@field(self.planes_buf.items[i], property),
             .cube_idx => return &@field(self.cubes_buf.items[i], property),
+            .aabb_idx => return &@field(self.aabbs_buf.items[i], property),
             .cylinder_idx => return &@field(self.cylinders_buf.items[i], property),
             .cone_idx => return &@field(self.cones_buf.items[i], property),
             .triangle_idx => return &@field(self.triangles_buf.items[i], property),
@@ -183,15 +171,17 @@ pub const World = struct {
             ixs.intersect(ptr.*, vptr, ray);
         }
 
-        for (self.triangles_buf.items, 0..) |*ptr, i| {
-            const vptr = VolumePtr{ .triangle_idx = @intCast(u16, i) };
-            ixs.intersect(ptr.*, vptr, ray);
-        }
+        // TODO iterate over aabb instead of triangles
 
-        for (self.smooth_triangles_buf.items, 0..) |*ptr, i| {
-            const vptr = VolumePtr{ .smooth_triangle_idx = @intCast(u16, i) };
-            ixs.intersect(ptr.*, vptr, ray);
-        }
+        // for (self.triangles_buf.items, 0..) |*ptr, i| {
+        //     const vptr = VolumePtr{ .triangle_idx = @intCast(u16, i) };
+        //     ixs.intersect(ptr.*, vptr, ray);
+        // }
+
+        // for (self.smooth_triangles_buf.items, 0..) |*ptr, i| {
+        //     const vptr = VolumePtr{ .smooth_triangle_idx = @intCast(u16, i) };
+        //     ixs.intersect(ptr.*, vptr, ray);
+        // }
     }
 
     pub fn shadeHit(
@@ -297,6 +287,7 @@ pub const World = struct {
                 .sphere_idx => self.spheres_buf.items[hit.idx()].normalAt(ray.position(hit.t)),
                 .plane_idx => self.planes_buf.items[hit.idx()].normalAt(ray.position(hit.t)),
                 .cube_idx => self.cubes_buf.items[hit.idx()].normalAt(ray.position(hit.t)),
+                .aabb_idx => return Color.init(0, 0, 0), // aabbs should not be drawn
                 .cylinder_idx => self.cylinders_buf.items[hit.idx()].normalAt(ray.position(hit.t)),
                 .cone_idx => self.cones_buf.items[hit.idx()].normalAt(ray.position(hit.t)),
                 .triangle_idx => self.triangles_buf.items[hit.idx()].normalAt(ray.position(hit.t)),
@@ -327,6 +318,7 @@ pub const World = struct {
     spheres_buf: std.ArrayList(vol.Sphere),
     planes_buf: std.ArrayList(vol.Plane),
     cubes_buf: std.ArrayList(vol.Cube),
+    aabbs_buf: std.ArrayList(vol.AABB),
     cylinders_buf: std.ArrayList(vol.Cylinder),
     cones_buf: std.ArrayList(vol.Cone),
     triangles_buf: std.ArrayList(vol.Triangle),
@@ -405,6 +397,7 @@ pub const VolumePtr = union(enum) {
     sphere_idx: u16,
     plane_idx: u16,
     cube_idx: u16,
+    aabb_idx: u16,
     cylinder_idx: u16,
     cone_idx: u16,
     triangle_idx: u16,

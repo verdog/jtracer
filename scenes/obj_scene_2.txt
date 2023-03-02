@@ -1,0 +1,94 @@
+POINTLIGHT
+position (0,80,-30)
+intensity (1,1,1)
+
+CAMERA
+width 400
+height 400
+scale 1
+fov pi/3
+from (0,5,-6)
+to (0,0,0)
+up (0,1,0)
+
+PLANE
+material 3dchecker (0.3,0.3,0.3) (0.33,0.33,0.33)
+material ambient 0.5
+
+OBJ obj/teapot-low.obj
+transform translate (3,0,0)
+transform rotate y 0
+material flat (0.7,0.2,0.2)
+material ambient 0.5
+flat true
+
+OBJ obj/teapot-low.obj
+transform translate (3,0,0)
+transform rotate y pi/4
+material flat (0.7,0.2,0.2)
+material ambient 0.5
+flat true
+
+OBJ obj/teapot-low.obj
+transform translate (3,0,0)
+transform rotate y pi/4
+transform rotate y pi/4
+material flat (0.7,0.2,0.2)
+material ambient 0.5
+flat true
+
+OBJ obj/teapot-low.obj
+transform translate (3,0,0)
+transform rotate y pi/4
+transform rotate y pi/4
+transform rotate y pi/4
+material flat (0.7,0.2,0.2)
+material ambient 0.5
+flat true
+
+OBJ obj/teapot-low.obj
+transform translate (3,0,0)
+transform rotate y pi/4
+transform rotate y pi/4
+transform rotate y pi/4
+transform rotate y pi/4
+material flat (0.7,0.2,0.2)
+material ambient 0.5
+flat true
+
+OBJ obj/teapot-low.obj
+transform translate (3,0,0)
+transform rotate y pi/4
+transform rotate y pi/4
+transform rotate y pi/4
+transform rotate y pi/4
+transform rotate y pi/4
+material flat (0.7,0.2,0.2)
+material ambient 0.5
+flat true
+
+OBJ obj/teapot-low.obj
+transform translate (3,0,0)
+transform rotate y pi/4
+transform rotate y pi/4
+transform rotate y pi/4
+transform rotate y pi/4
+transform rotate y pi/4
+transform rotate y pi/4
+material flat (0.7,0.2,0.2)
+material ambient 0.5
+flat true
+
+OBJ obj/teapot-low.obj
+transform translate (3,0,0)
+transform rotate y pi/4
+transform rotate y pi/4
+transform rotate y pi/4
+transform rotate y pi/4
+transform rotate y pi/4
+transform rotate y pi/4
+transform rotate y pi/4
+material flat (0.7,0.2,0.2)
+material ambient 0.5
+flat true
+

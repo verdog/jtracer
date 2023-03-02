@@ -173,6 +173,10 @@ pub const Intersections = struct {
                 std.debug.assert(std.meta.activeTag(vptr) == .cube_idx);
                 self.intersectCube(vptr, volu, ray);
             },
+            vol.AABB => {
+                std.debug.assert(std.meta.activeTag(vptr) == .aabb_idx);
+                self.intersectAABB(vptr, volu, ray);
+            },
             vol.Cylinder => {
                 std.debug.assert(std.meta.activeTag(vptr) == .cylinder_idx);
                 self.intersectCylinder(vptr, volu, ray);
@@ -225,11 +229,10 @@ pub const Intersections = struct {
         self.ixs.append(Intersection.init(-td_ray.origin.y() / td_ray.direction.y(), vptr)) catch @panic("OOM");
     }
 
-    fn checkCubeAxis(origin: f64, direction: f64) struct { tmin: f64, tmax: f64 } {
-        const tmin_numerator = -1 - origin;
-        const tmax_numerator = 1 - origin;
+    fn checkCubeAxis(origin: f64, direction: f64, min: f64, max: f64) struct { tmin: f64, tmax: f64 } {
+        const tmin_numerator = min - origin;
+        const tmax_numerator = max - origin;
 
-        // TODO: careful about dividing by zero here
         var tmin = tmin_numerator / direction;
         var tmax = tmax_numerator / direction;
 
@@ -241,9 +244,25 @@ pub const Intersections = struct {
     fn intersectCube(self: *This, vptr: VolPtr, cube: vol.Cube, ray: Ray) void {
         const td_ray = ray.transformed(cube.transform.inverse);
 
-        const x_axis = checkCubeAxis(td_ray.origin.x(), td_ray.direction.x());
-        const y_axis = checkCubeAxis(td_ray.origin.y(), td_ray.direction.y());
-        const z_axis = checkCubeAxis(td_ray.origin.z(), td_ray.direction.z());
+        const x_axis = checkCubeAxis(td_ray.origin.x(), td_ray.direction.x(), -1, 1);
+        const y_axis = checkCubeAxis(td_ray.origin.y(), td_ray.direction.y(), -1, 1);
+        const z_axis = checkCubeAxis(td_ray.origin.z(), td_ray.direction.z(), -1, 1);
+
+        const tmin = std.math.max3(x_axis.tmin, y_axis.tmin, z_axis.tmin);
+        const tmax = std.math.min3(x_axis.tmax, y_axis.tmax, z_axis.tmax);
+
+        if (tmin > tmax) return; // no hit
+
+        self.ixs.append(Intersection.init(tmin, vptr)) catch @panic("OOM");
+        self.ixs.append(Intersection.init(tmax, vptr)) catch @panic("OOM");
+    }
+
+    fn intersectAABB(self: *This, vptr: VolPtr, aabb: vol.AABB, ray: Ray) void {
+        const td_ray = ray.transformed(aabb.transform.inverse);
+
+        const x_axis = checkCubeAxis(td_ray.origin.x(), td_ray.direction.x(), aabb.bounds.min_x, aabb.bounds.max_x);
+        const y_axis = checkCubeAxis(td_ray.origin.y(), td_ray.direction.y(), aabb.bounds.min_y, aabb.bounds.max_y);
+        const z_axis = checkCubeAxis(td_ray.origin.z(), td_ray.direction.z(), aabb.bounds.min_z, aabb.bounds.max_z);
 
         const tmin = std.math.max3(x_axis.tmin, y_axis.tmin, z_axis.tmin);
         const tmax = std.math.min3(x_axis.tmax, y_axis.tmax, z_axis.tmax);
@@ -922,6 +941,78 @@ test "A ray misses a cube" {
     try tst(Ray.initC(2, 0, 2, 0, 0, -1)); // parallel
     try tst(Ray.initC(0, 2, 2, 0, -1, 0)); // parallel
     try tst(Ray.initC(2, 2, 0, -1, 0, 0)); // parallel
+}
+
+test "A ray intersects an AABB" {
+    const tst = struct {
+        fn t(ray: Ray, expected_t0: f64, expected_t1: f64) !void {
+            var c = vol.AABB.init();
+            c.bounds = .{
+                .min_x = 0,
+                .max_x = 2,
+                .min_y = -2,
+                .max_y = 0,
+                .min_z = -3,
+                .max_z = 3,
+            };
+            const cptr = VolPtr{ .aabb_idx = 0 };
+            var xs = Intersections.init(std.testing.allocator, .{});
+            defer xs.deinit();
+
+            xs.intersect(c, cptr, ray);
+            try expect(xs.ixs.items.len == 2);
+            try expect(xs.ixs.items[0].t == expected_t0);
+            try expect(std.meta.eql(xs.ixs.items[0].vptr, cptr));
+            try expect(xs.ixs.items[1].t == expected_t1);
+            try expect(std.meta.eql(xs.ixs.items[1].vptr, cptr));
+        }
+    }.t;
+
+    try tst(Ray.initC(3, -1, 0, -1, 0, 0), 1, 3); // +x
+    try tst(Ray.initC(-1, -1.5, 0, 1, 0, 0), 1, 3); // -x
+    try tst(Ray.initC(1, 1, 0, 0, -1, 0), 1, 3); // +y
+    try tst(Ray.initC(1, -3, 0, 0, 1, 0), 1, 3); // -y
+    try tst(Ray.initC(1, -1, 5, 0, 0, -1), 2, 8); // +z
+    try tst(Ray.initC(1, -1, -5, 0, 0, 1), 2, 8); // -z
+    try tst(Ray.initC(1, -1, 0, 0, 0, 1), -3, 3); // inside the cube
+}
+
+test "A ray misses an AABB" {
+    const tst = struct {
+        fn t(ray: Ray) !void {
+            var c = vol.AABB.init();
+            c.bounds = .{
+                .min_x = 0,
+                .max_x = 2,
+                .min_y = -2,
+                .max_y = 0,
+                .min_z = -3,
+                .max_z = 3,
+            };
+            const cptr = VolPtr{ .aabb_idx = 0 };
+            var xs = Intersections.init(std.testing.allocator, .{});
+            defer xs.deinit();
+
+            xs.intersect(c, cptr, ray);
+            try expect(xs.ixs.items.len == 0);
+        }
+    }.t;
+
+    try tst(Ray.init(
+        Point.init(-2, 0, 0),
+        Vector.init(0.2673, 0.5345, 0.8018).normalized(),
+    )); // diagonal
+    try tst(Ray.init(
+        Point.init(-0.5, -2, 0),
+        Vector.init(-0.8018, 0.2673, 0.5345).normalized(),
+    )); // diagonal
+    try tst(Ray.init(
+        Point.init(0, -4, -2),
+        Vector.init(0.5345, 0.2018, 0.2673).normalized(),
+    )); // diagonal
+    try tst(Ray.initC(2, 1, 2, 0, 0, -1)); // parallel
+    try tst(Ray.initC(-2, 2, 2, 0, -1, 0)); // parallel
+    try tst(Ray.initC(2, 0.5, 0, -1, 0, 0)); // parallel
 }
 
 test "A ray misses a cylinder" {

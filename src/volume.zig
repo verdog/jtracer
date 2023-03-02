@@ -102,6 +102,31 @@ pub const Cube = struct {
     const This = @This();
 };
 
+pub const AABB = struct {
+    pub const Bounds = struct {
+        min_x: f64 = -1,
+        max_x: f64 = 1,
+        min_y: f64 = -1,
+        max_y: f64 = 1,
+        min_z: f64 = -1,
+        max_z: f64 = 1,
+    };
+
+    pub fn init() This {
+        return .{
+            .transform = trans.Transform{},
+            .material = Material.init(),
+            .bounds = Bounds{},
+        };
+    }
+
+    transform: trans.Transform,
+    material: Material, // XXX: unused but needed to fit api of World
+    bounds: Bounds,
+
+    const This = @This();
+};
+
 pub const Cylinder = struct {
     transform: trans.Transform,
     material: Material,
