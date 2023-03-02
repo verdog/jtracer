@@ -171,17 +171,24 @@ pub const World = struct {
             ixs.intersect(ptr.*, vptr, ray);
         }
 
-        // TODO iterate over aabb instead of triangles
-
-        // for (self.triangles_buf.items, 0..) |*ptr, i| {
-        //     const vptr = VolumePtr{ .triangle_idx = @intCast(u16, i) };
-        //     ixs.intersect(ptr.*, vptr, ray);
-        // }
-
-        // for (self.smooth_triangles_buf.items, 0..) |*ptr, i| {
-        //     const vptr = VolumePtr{ .smooth_triangle_idx = @intCast(u16, i) };
-        //     ixs.intersect(ptr.*, vptr, ray);
-        // }
+        // instead of testing each triangle, test each aabb. if hit, test contained
+        // triangles.
+        for (self.aabbs_buf.items) |aabb| {
+            if (Intersections.testIntersectsAABB(aabb, ray)) {
+                switch (aabb.range) {
+                    inline else => |buf| {
+                        for (buf, 0..) |v, j| {
+                            const idx = aabb.first_idx + j;
+                            const vptr = switch (aabb.range) {
+                                .flat => VolumePtr{ .triangle_idx = @intCast(u16, idx) },
+                                .smooth => VolumePtr{ .smooth_triangle_idx = @intCast(u16, idx) },
+                            };
+                            ixs.intersect(v, vptr, ray);
+                        }
+                    },
+                }
+            }
+        }
     }
 
     pub fn shadeHit(

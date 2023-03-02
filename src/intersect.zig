@@ -273,6 +273,20 @@ pub const Intersections = struct {
         self.ixs.append(Intersection.init(tmax, vptr)) catch @panic("OOM");
     }
 
+    pub fn testIntersectsAABB(aabb: vol.AABB, ray: Ray) bool {
+        const td_ray = ray.transformed(aabb.transform.inverse);
+
+        const x_axis = checkCubeAxis(td_ray.origin.x(), td_ray.direction.x(), aabb.bounds.min_x, aabb.bounds.max_x);
+        const y_axis = checkCubeAxis(td_ray.origin.y(), td_ray.direction.y(), aabb.bounds.min_y, aabb.bounds.max_y);
+        const z_axis = checkCubeAxis(td_ray.origin.z(), td_ray.direction.z(), aabb.bounds.min_z, aabb.bounds.max_z);
+
+        const tmin = std.math.max3(x_axis.tmin, y_axis.tmin, z_axis.tmin);
+        const tmax = std.math.min3(x_axis.tmax, y_axis.tmax, z_axis.tmax);
+
+        if (tmin > tmax) return false; // no hit
+        return true;
+    }
+
     fn intersectCylinder(self: *This, vptr: VolPtr, cyl: vol.Cylinder, ray: Ray) void {
         const td_ray = ray.transformed(cyl.transform.inverse);
         const pow = std.math.pow;

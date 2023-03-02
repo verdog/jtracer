@@ -117,12 +117,19 @@ pub const AABB = struct {
             .transform = trans.Transform{},
             .material = Material.init(),
             .bounds = Bounds{},
+            .first_idx = undefined,
+            .range = undefined,
         };
     }
 
     transform: trans.Transform,
     material: Material, // XXX: unused but needed to fit api of World
     bounds: Bounds,
+    first_idx: usize,
+    range: union(enum) {
+        flat: []Triangle,
+        smooth: []SmoothTriangle,
+    },
 
     const This = @This();
 };

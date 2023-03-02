@@ -416,9 +416,11 @@ pub fn parseWorldText(txt: []const u8, alctr: std.mem.Allocator) !FileContents {
                     bs.max_y = @max(std.math.max3(t.p1.y(), t.p2.y(), t.p3.y()), bs.max_y);
                     bs.max_z = @max(std.math.max3(t.p1.z(), t.p2.z(), t.p3.z()), bs.max_z);
                 }
+                // assuming all tforms are the same
                 transform = world.triangles_buf.items[tblock.start].transform;
             },
             .smooth => {
+                // find extents in object space
                 for (world.smooth_triangles_buf.items[tblock.start..tblock.end]) |t| {
                     bs.min_x = @min(std.math.min3(t.p1.x(), t.p2.x(), t.p3.x()), bs.min_x);
                     bs.min_y = @min(std.math.min3(t.p1.y(), t.p2.y(), t.p3.y()), bs.min_y);
@@ -427,15 +429,19 @@ pub fn parseWorldText(txt: []const u8, alctr: std.mem.Allocator) !FileContents {
                     bs.max_y = @max(std.math.max3(t.p1.y(), t.p2.y(), t.p3.y()), bs.max_y);
                     bs.max_z = @max(std.math.max3(t.p1.z(), t.p2.z(), t.p3.z()), bs.max_z);
                 }
+                // assuming all tforms are the same
                 transform = world.smooth_triangles_buf.items[tblock.start].transform;
             },
         }
 
-        // var cube = world.addVolume(Cube);
-        // cube.ptr.bounds = bs;
-        // cube.ptr.transform = transform;
-        // cube.ptr.material.transparency = 0.99;
-        // cube.ptr.material.diffuse = 0.1;
+        var aabb = world.addVolume(AABB);
+        aabb.ptr.bounds = bs;
+        aabb.ptr.transform = transform;
+        aabb.ptr.first_idx = tblock.start;
+        aabb.ptr.range = switch (tblock.buffer) {
+            .flat => .{ .flat = world.triangles_buf.items[tblock.start..tblock.end] },
+            .smooth => .{ .smooth = world.smooth_triangles_buf.items[tblock.start..tblock.end] },
+        };
     }
 
     if (camera == null) return unimplementedError();
