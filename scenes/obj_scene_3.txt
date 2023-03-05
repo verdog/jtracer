@@ -1,0 +1,42 @@
+POINTLIGHT
+position (0,80,-30)
+intensity (1,1,1)
+
+POINTLIGHT
+position (0,2,-30)
+intensity (1,1,1)
+
+CAMERA
+width 600
+height 200
+scale 1
+fov pi/3
+from (-1.5,2,-11)
+to (-1.5,1,0)
+up (0,1,0)
+
+PLANE
+material 3dchecker (0.3,0.3,0.3) (0.33,0.33,0.33)
+material ambient 0.5
+
+OBJ obj/doggy.obj
+material 3dchecker (0.6,0.2,0.2) (0.2,0.2,0.6)
+transform translate (-3,0,0)
+transform translate (-3,0,0)
+
+OBJ obj/doggy.obj
+material 3dchecker (0.6,0.2,0.2) (0.2,0.2,0.6)
+transform rotate y pi/2
+transform translate (-3,0,0)
+
+OBJ obj/doggy.obj
+material 3dchecker (0.6,0.2,0.2) (0.2,0.2,0.6)
+transform rotate y pi/2
+transform rotate y pi/2
+
+OBJ obj/doggy.obj
+material 3dchecker (0.6,0.2,0.2) (0.2,0.2,0.6)
+transform rotate y pi/2
+transform rotate y pi/2
+transform rotate y pi/2
+transform translate (3,0,0)

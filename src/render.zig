@@ -93,23 +93,22 @@ fn getChunks(w: i64, qan: Qanvas, alctr: std.mem.Allocator) []Chunk {
 
 pub fn startRenderEngine(world: World, cam: Camera, qan: *Qanvas, alctr: std.mem.Allocator) void {
     std.debug.print("Starting render.\n", .{});
-    var prog_ctx = std.Progress{};
-    var prog = blk: {
-        var total: u64 = 0;
-        var working_width = qan.width;
-        var working_height = qan.height;
-
-        while (working_width > 0 and working_height > 0) {
-            total += working_width * working_height;
-            working_width = @divTrunc(working_width, 2);
-            working_height = @divTrunc(working_height, 2);
-        }
-
-        break :blk prog_ctx.start("Pixels", total);
-    };
-
     var chunks = getChunks(32, qan.*, alctr);
     defer alctr.free(chunks);
+
+    var prog_ctx = std.Progress{};
+    var prog = blk: {
+        var total_chunk_passes: u64 = 0;
+
+        // assume all chunks have the same pixel size
+        var working_size = chunks[0].pixel_size;
+        while (working_size > 0) {
+            total_chunk_passes += chunks.len;
+            working_size = @divTrunc(working_size, 2);
+        }
+
+        break :blk prog_ctx.start("Chunks", total_chunk_passes);
+    };
 
     const cpus = std.Thread.getCpuCount() catch unreachable;
     const num_threads = @max(1, @divTrunc(cpus * 3, 4));
@@ -237,7 +236,8 @@ fn render(
             // 5 reflections
             const color = world.colorAt(cam.rayForPixel(pix_x, pix_y), alctr, 5);
             qan.fill(pix_x, pix_y, pixel_size, pixel_size, color);
-            prog.completeOne();
         }
     }
+
+    prog.completeOne();
 }

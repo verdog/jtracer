@@ -104,6 +104,10 @@ const FileSection = struct {
                     }
                 }
 
+                // XXX: some corrupt obj files can have bad geometry, e.g. a triangle
+                // where two of its verts are the same. this messes up the renderer down
+                // the line. we should filter those out here.
+
                 for (obj.triangles) |*tri| {
                     tri.material = mat;
                     tri.transform = tran;

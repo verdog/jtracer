@@ -29,7 +29,7 @@ material reflective 1
 transform rotate y pi/4.0
 transform translate (0,1,0)
 
-OBJ obj/teapot.obj
+OBJ obj/teapot-low.obj
 material 3dchecker (0.6,0.2,0.2) (0.2,0.2,0.6)
 transform rotate y pi/-4
 transform translate (0,1,0)
