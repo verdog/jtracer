@@ -8,11 +8,11 @@ to (0,1.75,0)
 up (0,1,0)
 
 POINTLIGHT
-position (-2,8,-6)
+position (-1,8,-6)
 intensity (0.55,0.5,0.45)
 
 POINTLIGHT
-position (-3,8,-6)
+position (-2,8,-6)
 intensity (0.45,0.5,0.55)
 
 CUBE tall right
@@ -29,7 +29,7 @@ material reflective 1
 transform rotate y pi/4.0
 transform translate (0,1,0)
 
-OBJ obj/teapot-low.obj
+OBJ obj/teapot.obj
 material 3dchecker (0.6,0.2,0.2) (0.2,0.2,0.6)
 transform rotate y pi/-4
 transform translate (0,1,0)
@@ -107,6 +107,28 @@ transform rotate y pi/1
 transform scale (0.7,0.7,0.7)
 transform translate (0,0,-1.5)
 parent hollow
+
+OBJ obj/doggy.obj
+material 3dchecker (0.6,0.2,0.2) (0.2,0.2,0.6)
+transform scale (0.5,0.5,0.5)
+transform rotate y pi/4
+transform translate (-2,0,-4)
+
+CUBE flat mirror
+material diffuse 0.1
+material ambient 0
+material reflective 1
+transform rotate y pi/-20
+transform scale (0.4,0.1,0.4)
+transform translate (-1,0.05,-3.5)
+
+SPHERE little mirror ball
+material diffuse 0.1
+material ambient 0
+material reflective 1
+transform scale (0.5,2,0.5)
+transform translate (0,3,0)
+parent flat mirror
 
 CONE on top of cylinder left
 material 3dchecker (0.6,0.2,0.2) (0.2,0.2,0.6)
