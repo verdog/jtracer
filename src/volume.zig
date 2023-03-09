@@ -374,6 +374,171 @@ pub const SmoothTriangle = struct {
     const This = @This();
 };
 
+pub const VolumePool = struct {
+    pub fn init(alctr: std.mem.Allocator) This {
+        return .{
+            .spheres_buf = std.ArrayList(Sphere).init(alctr),
+            .planes_buf = std.ArrayList(Plane).init(alctr),
+            .cubes_buf = std.ArrayList(Cube).init(alctr),
+            .aabbs_buf = std.ArrayList(AABB).init(alctr),
+            .cylinders_buf = std.ArrayList(Cylinder).init(alctr),
+            .cones_buf = std.ArrayList(Cone).init(alctr),
+            .triangles_buf = std.ArrayList(Triangle).init(alctr),
+            .smooth_triangles_buf = std.ArrayList(SmoothTriangle).init(alctr),
+            .lights_buf = std.ArrayList(lght.PointLight).init(alctr),
+        };
+    }
+
+    pub fn deinit(self: This) void {
+        self.spheres_buf.deinit();
+        self.planes_buf.deinit();
+        self.cubes_buf.deinit();
+        self.aabbs_buf.deinit();
+        self.cylinders_buf.deinit();
+        self.cones_buf.deinit();
+        self.triangles_buf.deinit();
+        self.smooth_triangles_buf.deinit();
+        self.lights_buf.deinit();
+    }
+
+    /// Create a new volume of type T in the pool and return a handle and pointer to it.
+    pub fn addVolume(self: *This, comptime T: type) struct { handle: VolumePtr, ptr: *T } {
+        var buf = switch (T) {
+            Sphere => &self.spheres_buf,
+            Plane => &self.planes_buf,
+            Cube => &self.cubes_buf,
+            AABB => &self.aabbs_buf,
+            Cylinder => &self.cylinders_buf,
+            Cone => &self.cones_buf,
+            Triangle => &self.triangles_buf,
+            SmoothTriangle => &self.smooth_triangles_buf,
+            else => unreachable,
+        };
+
+        switch (T) {
+            Triangle => buf.append(T.init(
+                Point.init(0, 0, 0),
+                Point.init(0, 1, 0),
+                Point.init(1, 0, 0),
+            )) catch unreachable,
+            SmoothTriangle => buf.append(T.init(
+                Point.init(0, 0, 0),
+                Point.init(0, 1, 0),
+                Point.init(1, 0, 0),
+                Vector.init(0, 0, -1),
+                Vector.init(0, 0, -1),
+                Vector.init(0, 0, -1),
+            )) catch unreachable,
+            else => buf.append(T.init()) catch unreachable,
+        }
+
+        const last = @intCast(u16, buf.items.len - 1);
+        const handle = switch (T) {
+            Sphere => VolumePtr{ .sphere_idx = last },
+            Plane => VolumePtr{ .plane_idx = last },
+            Cube => VolumePtr{ .cube_idx = last },
+            AABB => VolumePtr{ .aabb_idx = last },
+            Cylinder => VolumePtr{ .cylinder_idx = last },
+            Cone => VolumePtr{ .cone_idx = last },
+            Triangle => VolumePtr{ .triangle_idx = last },
+            SmoothTriangle => VolumePtr{ .smooth_triangle_idx = last },
+            else => unreachable,
+        };
+
+        return .{
+            .handle = handle,
+            .ptr = &buf.items[last],
+        };
+    }
+
+    /// Create a new light of type T in the pool and return a handle and pointer to it.
+    pub fn addLight(self: *This, comptime T: type) struct { handle: LightPtr, ptr: *T } {
+        // TODO: merge with addVolume?
+        // TODO: PointLight should probably be defined in volume.zig with the rest of em
+        switch (T) {
+            lght.PointLight => {
+                const point = @import("tuple.zig").Point.init(0, 0, 0);
+                const color = @import("color.zig").Color.init(1, 1, 1);
+                self.lights_buf.append(lght.PointLight.init(point, color)) catch unreachable;
+                const last = @intCast(u16, self.lights_buf.items.len - 1);
+                return .{
+                    .handle = LightPtr{ .light_idx = last },
+                    .ptr = &self.lights_buf.items[last],
+                };
+            },
+            else => unreachable,
+        }
+    }
+
+    /// Assumes that Sphere defines what fields are available
+    fn PropertyT(comptime name: []const u8) type {
+        const fs = @typeInfo(Sphere).Struct.fields;
+        for (fs) |fd| {
+            if (std.mem.eql(u8, name, fd.name)) {
+                return *fd.type;
+            }
+        }
+        unreachable;
+    }
+
+    /// Given a VolumePtr, look up the associated object in the pool and return the value
+    /// of the field given. Assumes that Sphere defines what fields are available.
+    pub fn getProperty(
+        self: This,
+        volp: VolumePtr,
+        comptime property: []const u8,
+    ) PropertyT(property) {
+        const i = switch (volp) {
+            inline else => |i| i,
+        };
+        return switch (std.meta.activeTag(volp)) {
+            .sphere_idx => return &@field(self.spheres_buf.items[i], property),
+            .plane_idx => return &@field(self.planes_buf.items[i], property),
+            .cube_idx => return &@field(self.cubes_buf.items[i], property),
+            .aabb_idx => return &@field(self.aabbs_buf.items[i], property),
+            .cylinder_idx => return &@field(self.cylinders_buf.items[i], property),
+            .cone_idx => return &@field(self.cones_buf.items[i], property),
+            .triangle_idx => return &@field(self.triangles_buf.items[i], property),
+            .smooth_triangle_idx => return &@field(self.smooth_triangles_buf.items[i], property),
+        };
+    }
+
+    spheres_buf: std.ArrayList(Sphere),
+    planes_buf: std.ArrayList(Plane),
+    cubes_buf: std.ArrayList(Cube),
+    aabbs_buf: std.ArrayList(AABB),
+    cylinders_buf: std.ArrayList(Cylinder),
+    cones_buf: std.ArrayList(Cone),
+    triangles_buf: std.ArrayList(Triangle),
+    smooth_triangles_buf: std.ArrayList(SmoothTriangle),
+    lights_buf: std.ArrayList(lght.PointLight),
+
+    const This = @This();
+
+    // An handle for an object in a VolumePool
+    pub const VolumePtr = union(enum) {
+        sphere_idx: u16,
+        plane_idx: u16,
+        cube_idx: u16,
+        aabb_idx: u16,
+        cylinder_idx: u16,
+        cone_idx: u16,
+        triangle_idx: u16,
+        smooth_triangle_idx: u16,
+
+        pub fn idx(self: VolumePtr) u16 {
+            return switch (self) {
+                inline else => |i| i,
+            };
+        }
+    };
+
+    /// A handle for a light in a VolumePool
+    pub const LightPtr = union(enum) {
+        light_idx: u16,
+    };
+};
+
 test "The normal of a plane is constant everywhere" {
     const p = Plane.init();
 
@@ -740,6 +905,7 @@ const std = @import("std");
 
 const mtx = @import("matrix.zig");
 const trans = @import("transform.zig");
+const lght = @import("light.zig");
 const mymath = @import("mymath.zig");
 
 const Tuple = @import("tuple.zig").Tuple;

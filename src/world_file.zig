@@ -156,41 +156,41 @@ const FileSection = struct {
         switch (self.data) {
             .camera => |d| camera.* = d,
             .point_light => |d| {
-                var new_light = world.addLight(PointLight);
+                var new_light = world.pool.addLight(PointLight);
                 new_light.ptr.* = d;
             },
             .cone => |c| {
-                var new_cone = world.addVolume(Cone);
+                var new_cone = world.pool.addVolume(Cone);
                 new_cone.ptr.* = c;
                 self.vptr = new_cone.handle;
             },
             .sphere => |sph| {
-                var new_sphere = world.addVolume(Sphere);
+                var new_sphere = world.pool.addVolume(Sphere);
                 new_sphere.ptr.* = sph;
                 self.vptr = new_sphere.handle;
             },
             .plane => |pl| {
-                var new_plane = world.addVolume(Plane);
+                var new_plane = world.pool.addVolume(Plane);
                 new_plane.ptr.* = pl;
                 self.vptr = new_plane.handle;
             },
             .cube => |c| {
-                var new_cube = world.addVolume(Cube);
+                var new_cube = world.pool.addVolume(Cube);
                 new_cube.ptr.* = c;
                 self.vptr = new_cube.handle;
             },
             .cylinder => |c| {
-                var new_cylinder = world.addVolume(Cylinder);
+                var new_cylinder = world.pool.addVolume(Cylinder);
                 new_cylinder.ptr.* = c;
                 self.vptr = new_cylinder.handle;
             },
             .triangle => |t| {
-                var new_triangle = world.addVolume(Triangle);
+                var new_triangle = world.pool.addVolume(Triangle);
                 new_triangle.ptr.* = t;
                 self.vptr = new_triangle.handle;
             },
             .smooth_triangle => |st| {
-                var new_striangle = world.addVolume(SmoothTriangle);
+                var new_striangle = world.pool.addVolume(SmoothTriangle);
                 new_striangle.ptr.* = st;
                 self.vptr = new_striangle.handle;
             },
@@ -412,7 +412,7 @@ pub fn parseWorldText(txt: []const u8, alctr: std.mem.Allocator) !FileContents {
         switch (tblock.buffer) {
             .flat => {
                 // find extents in object space
-                for (world.triangles_buf.items[tblock.start..tblock.end]) |t| {
+                for (world.pool.triangles_buf.items[tblock.start..tblock.end]) |t| {
                     bs.min_x = @min(std.math.min3(t.p1.x(), t.p2.x(), t.p3.x()), bs.min_x);
                     bs.min_y = @min(std.math.min3(t.p1.y(), t.p2.y(), t.p3.y()), bs.min_y);
                     bs.min_z = @min(std.math.min3(t.p1.z(), t.p2.z(), t.p3.z()), bs.min_z);
@@ -421,11 +421,11 @@ pub fn parseWorldText(txt: []const u8, alctr: std.mem.Allocator) !FileContents {
                     bs.max_z = @max(std.math.max3(t.p1.z(), t.p2.z(), t.p3.z()), bs.max_z);
                 }
                 // assuming all tforms are the same
-                transform = world.triangles_buf.items[tblock.start].transform;
+                transform = world.pool.triangles_buf.items[tblock.start].transform;
             },
             .smooth => {
                 // find extents in object space
-                for (world.smooth_triangles_buf.items[tblock.start..tblock.end]) |t| {
+                for (world.pool.smooth_triangles_buf.items[tblock.start..tblock.end]) |t| {
                     bs.min_x = @min(std.math.min3(t.p1.x(), t.p2.x(), t.p3.x()), bs.min_x);
                     bs.min_y = @min(std.math.min3(t.p1.y(), t.p2.y(), t.p3.y()), bs.min_y);
                     bs.min_z = @min(std.math.min3(t.p1.z(), t.p2.z(), t.p3.z()), bs.min_z);
@@ -434,17 +434,17 @@ pub fn parseWorldText(txt: []const u8, alctr: std.mem.Allocator) !FileContents {
                     bs.max_z = @max(std.math.max3(t.p1.z(), t.p2.z(), t.p3.z()), bs.max_z);
                 }
                 // assuming all tforms are the same
-                transform = world.smooth_triangles_buf.items[tblock.start].transform;
+                transform = world.pool.smooth_triangles_buf.items[tblock.start].transform;
             },
         }
 
-        var aabb = world.addVolume(AABB);
+        var aabb = world.pool.addVolume(AABB);
         aabb.ptr.bounds = bs;
         aabb.ptr.transform = transform;
         aabb.ptr.first_idx = tblock.start;
         aabb.ptr.range = switch (tblock.buffer) {
-            .flat => .{ .flat = world.triangles_buf.items[tblock.start..tblock.end] },
-            .smooth => .{ .smooth = world.smooth_triangles_buf.items[tblock.start..tblock.end] },
+            .flat => .{ .flat = world.pool.triangles_buf.items[tblock.start..tblock.end] },
+            .smooth => .{ .smooth = world.pool.smooth_triangles_buf.items[tblock.start..tblock.end] },
         };
     }
 
@@ -529,7 +529,7 @@ const VolumeTree = struct {
 
     fn applyTransformsDepthFirst(self: VolumeTree, world: *World, idx: usize, parent_tform: Transform) void {
         const vptr = self.nodes[idx].vptr.?;
-        var vol_transform = world.getProperty(vptr, "transform");
+        var vol_transform = world.pool.getProperty(vptr, "transform");
 
         vol_transform.* = parent_tform.mult(vol_transform.*);
 
@@ -1496,8 +1496,8 @@ test "parse world (1)" {
     const camera = &file.camera;
     defer world.deinit();
 
-    try exEq(@as(usize, 1), world.lights_buf.items.len);
-    try exEq(@as(usize, 1), world.cones_buf.items.len);
+    try exEq(@as(usize, 1), world.pool.lights_buf.items.len);
+    try exEq(@as(usize, 1), world.pool.cones_buf.items.len);
     try exEq(@as(i64, 300), camera.width);
     try exEq(@as(i64, 300), camera.height);
 }
@@ -1530,12 +1530,12 @@ test "parse world (2)" {
     const camera = &file.camera;
     defer world.deinit();
 
-    try exEq(@as(usize, 1), world.lights_buf.items.len);
-    try exEq(@as(usize, 1), world.spheres_buf.items.len);
-    try exEq(@as(usize, 1), world.planes_buf.items.len);
-    try exEq(@as(usize, 1), world.cubes_buf.items.len);
-    try exEq(@as(usize, 1), world.cylinders_buf.items.len);
-    try exEq(@as(usize, 1), world.cones_buf.items.len);
+    try exEq(@as(usize, 1), world.pool.lights_buf.items.len);
+    try exEq(@as(usize, 1), world.pool.spheres_buf.items.len);
+    try exEq(@as(usize, 1), world.pool.planes_buf.items.len);
+    try exEq(@as(usize, 1), world.pool.cubes_buf.items.len);
+    try exEq(@as(usize, 1), world.pool.cylinders_buf.items.len);
+    try exEq(@as(usize, 1), world.pool.cones_buf.items.len);
     try exEq(@as(i64, 300), camera.width);
     try exEq(@as(i64, 300), camera.height);
 }
@@ -1566,7 +1566,7 @@ test "parse world (3)" {
     const camera = &file.camera;
     defer world.deinit();
 
-    try exEq(@as(usize, 3), world.cubes_buf.items.len);
+    try exEq(@as(usize, 3), world.pool.cubes_buf.items.len);
     try exEq(@as(i64, 300), camera.width);
     try exEq(@as(i64, 300), camera.height);
 }
@@ -1595,18 +1595,18 @@ test "parse world (4)" {
     defer world.deinit();
 
     // test.obj has 3 triangles in it
-    try exEq(@as(usize, 3), world.triangles_buf.items.len);
-    try ex(world.triangles_buf.items[0].equals(Triangle.init(
+    try exEq(@as(usize, 3), world.pool.triangles_buf.items.len);
+    try ex(world.pool.triangles_buf.items[0].equals(Triangle.init(
         Point.init(-1, 1, 0),
         Point.init(-1, 0, 0),
         Point.init(1, 0, 0),
     )));
-    try ex(world.triangles_buf.items[1].equals(Triangle.init(
+    try ex(world.pool.triangles_buf.items[1].equals(Triangle.init(
         Point.init(-1, 1, 0),
         Point.init(1, 0, 0),
         Point.init(1, 1, 0),
     )));
-    try ex(world.triangles_buf.items[2].equals(Triangle.init(
+    try ex(world.pool.triangles_buf.items[2].equals(Triangle.init(
         Point.init(-1, 1, 0),
         Point.init(1, 1, 0),
         Point.init(0, 2, 0),
@@ -1728,16 +1728,16 @@ test "parse parents: parser applies transforms: translation" {
     const world = &file.world;
     defer world.deinit();
 
-    try exEq(@as(usize, 2), world.cones_buf.items.len);
+    try exEq(@as(usize, 2), world.pool.cones_buf.items.len);
 
     // assuming that they are added to the world in order...
 
-    errdefer tprint(world.cones_buf.items[1].transform.t);
-    errdefer tprint(world.cones_buf.items[0].transform.t);
+    errdefer tprint(world.pool.cones_buf.items[1].transform.t);
+    errdefer tprint(world.pool.cones_buf.items[0].transform.t);
 
-    try ex(world.cones_buf.items[0].transform.t.equals(trans.makeTranslation(1, 0, 0).t));
+    try ex(world.pool.cones_buf.items[0].transform.t.equals(trans.makeTranslation(1, 0, 0).t));
     // test that the top was moved along with the bottom
-    try ex(world.cones_buf.items[1].transform.t.equals(trans.makeTranslation(1, 2, 0).t));
+    try ex(world.pool.cones_buf.items[1].transform.t.equals(trans.makeTranslation(1, 2, 0).t));
 }
 
 test "parse parents: parser applies transforms: rotation" {
@@ -1774,15 +1774,15 @@ test "parse parents: parser applies transforms: rotation" {
     const world = &file.world;
     defer world.deinit();
 
-    try exEq(@as(usize, 4), world.spheres_buf.items.len);
+    try exEq(@as(usize, 4), world.pool.spheres_buf.items.len);
 
     // assuming that they are added to the world in order...
 
     errdefer {
-        tprint(world.spheres_buf.items[0].transform.t);
-        tprint(world.spheres_buf.items[1].transform.t);
-        tprint(world.spheres_buf.items[2].transform.t);
-        tprint(world.spheres_buf.items[3].transform.t);
+        tprint(world.pool.spheres_buf.items[0].transform.t);
+        tprint(world.pool.spheres_buf.items[1].transform.t);
+        tprint(world.pool.spheres_buf.items[2].transform.t);
+        tprint(world.pool.spheres_buf.items[3].transform.t);
     }
 
     const identity = trans.Transform{};
@@ -1793,7 +1793,7 @@ test "parse parents: parser applies transforms: rotation" {
             trans.makeRotationZ(PI / 2.0),
             trans.makeScaling(0.5, 0.5, 0.5),
         }).t;
-        try ex(world.spheres_buf.items[0].transform.t.equals(test_t_1));
+        try ex(world.pool.spheres_buf.items[0].transform.t.equals(test_t_1));
     }
 
     {
@@ -1802,7 +1802,7 @@ test "parse parents: parser applies transforms: rotation" {
             trans.makeScaling(0.5, 0.5, 0.5),
             trans.makeRotationZ(PI / 2.0),
         }).t;
-        try ex(world.spheres_buf.items[1].transform.t.equals(test_t_2));
+        try ex(world.pool.spheres_buf.items[1].transform.t.equals(test_t_2));
     }
 
     {
@@ -1811,7 +1811,7 @@ test "parse parents: parser applies transforms: rotation" {
             trans.makeRotationZ(PI / 2.0),
             trans.makeScaling(0.5, 0.5, 0.5),
         }).t;
-        try ex(world.spheres_buf.items[2].transform.t.equals(test_t_3));
+        try ex(world.pool.spheres_buf.items[2].transform.t.equals(test_t_3));
     }
 
     {
@@ -1820,7 +1820,7 @@ test "parse parents: parser applies transforms: rotation" {
             trans.makeRotationZ(PI / 2.0),
             trans.makeScaling(0.5, 0.5, 0.5),
         }).t;
-        try ex(world.spheres_buf.items[3].transform.t.equals(test_t_4));
+        try ex(world.pool.spheres_buf.items[3].transform.t.equals(test_t_4));
     }
 }
 
@@ -2035,8 +2035,8 @@ test "Obj: apply material" {
     const world = &file.world;
     defer world.deinit();
 
-    try exEq(@as(usize, 3), world.triangles_buf.items.len);
-    try ex(world.triangles_buf.items[0].material.color_map.flat.color.equals(Color.init(1, 0, 0)));
+    try exEq(@as(usize, 3), world.pool.triangles_buf.items.len);
+    try ex(world.pool.triangles_buf.items[0].material.color_map.flat.color.equals(Color.init(1, 0, 0)));
 }
 
 test "Obj: apply transform" {
@@ -2060,10 +2060,10 @@ test "Obj: apply transform" {
     const world = &file.world;
     defer world.deinit();
 
-    try exEq(@as(usize, 3), world.triangles_buf.items.len);
-    try ex(world.triangles_buf.items[0].transform.t.equals(trans.makeTranslation(0, 1, 0).t));
-    try ex(world.triangles_buf.items[1].transform.t.equals(trans.makeTranslation(0, 1, 0).t));
-    try ex(world.triangles_buf.items[2].transform.t.equals(trans.makeTranslation(0, 1, 0).t));
+    try exEq(@as(usize, 3), world.pool.triangles_buf.items.len);
+    try ex(world.pool.triangles_buf.items[0].transform.t.equals(trans.makeTranslation(0, 1, 0).t));
+    try ex(world.pool.triangles_buf.items[1].transform.t.equals(trans.makeTranslation(0, 1, 0).t));
+    try ex(world.pool.triangles_buf.items[2].transform.t.equals(trans.makeTranslation(0, 1, 0).t));
 }
 
 test "obj: parent" {
@@ -2089,10 +2089,10 @@ test "obj: parent" {
     const world = &file.world;
     defer world.deinit();
 
-    try exEq(@as(usize, 3), world.triangles_buf.items.len);
-    try ex(world.triangles_buf.items[0].transform.t.equals(trans.makeTranslation(0, 1, 0).t));
-    try ex(world.triangles_buf.items[1].transform.t.equals(trans.makeTranslation(0, 1, 0).t));
-    try ex(world.triangles_buf.items[2].transform.t.equals(trans.makeTranslation(0, 1, 0).t));
+    try exEq(@as(usize, 3), world.pool.triangles_buf.items.len);
+    try ex(world.pool.triangles_buf.items[0].transform.t.equals(trans.makeTranslation(0, 1, 0).t));
+    try ex(world.pool.triangles_buf.items[1].transform.t.equals(trans.makeTranslation(0, 1, 0).t));
+    try ex(world.pool.triangles_buf.items[2].transform.t.equals(trans.makeTranslation(0, 1, 0).t));
 }
 
 test "obj: parse vertex normals" {
@@ -2188,4 +2188,4 @@ const Cone = @import("volume.zig").Cone;
 const Triangle = @import("volume.zig").Triangle;
 const SmoothTriangle = @import("volume.zig").SmoothTriangle;
 
-const VolumePtr = @import("world.zig").VolumePtr;
+const VolumePtr = @import("volume.zig").VolumePool.VolumePtr;

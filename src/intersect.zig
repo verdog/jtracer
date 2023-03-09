@@ -1353,7 +1353,7 @@ const Vector = @import("tuple.zig").Vector;
 const Point = @import("tuple.zig").Point;
 const Ray = @import("ray.zig").Ray;
 
-const VolPtr = @import("world.zig").VolumePtr;
+const VolPtr = @import("volume.zig").VolumePool.VolumePtr;
 
 const trans = @import("transform.zig");
 const mtx = @import("matrix.zig");
