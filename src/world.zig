@@ -184,6 +184,7 @@ pub const World = struct {
                 .cone_idx => self.pool.cones_buf.items[hit.idx()].normalAt(ray.position(hit.t)),
                 .triangle_idx => self.pool.triangles_buf.items[hit.idx()].normalAt(ray.position(hit.t)),
                 .smooth_triangle_idx => self.pool.smooth_triangles_buf.items[hit.idx()].normalAt(ray.position(hit.t), hit.u.?, hit.v.?),
+                .csg_idx => return Color.init(0, 0, 0), // TODO
             };
 
             const bounds = ixs.findBoundaryObjects(hit);

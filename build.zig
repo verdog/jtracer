@@ -2,22 +2,15 @@ const std = @import("std");
 const SDLSdk = @import("external/SDL.zig/Sdk.zig");
 
 pub fn build(b: *std.build.Builder) void {
-    // Standard target options allows the person running `zig build` to choose
-    // what target to build for. Here we do not override the defaults, which
-    // means any target is allowed, and the default is native. Other options
-    // for restricting supported target set are available.
-    const target = b.standardTargetOptions(.{});
-
-    // Standard release options allow the person running `zig build` to select
-    // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
-    const optimize = b.standardOptimizeOption(.{});
+    const optimize = b.standardOptimizeOption(.{
+        .preferred_optimize_mode = .ReleaseSafe,
+    });
 
     const SDL = SDLSdk.init(b, null);
 
     const exe = b.addExecutable(.{
         .name = "jtracer",
         .root_source_file = .{ .path = "src/main.zig" },
-        .target = target,
         .optimize = optimize,
     });
     exe.emit_docs = .emit;
@@ -41,7 +34,6 @@ pub fn build(b: *std.build.Builder) void {
     const test_step = b.step("test", "Run unit tests");
     var ts = b.addTest(.{
         .root_source_file = .{ .path = "src/main.zig" },
-        .target = target,
         .optimize = optimize,
     });
     test_step.dependOn(&ts.run().step);

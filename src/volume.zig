@@ -3,7 +3,7 @@
 pub const Sphere = struct {
     transform: trans.Transform,
 
-    // TODO make this field more data-oriented
+    // TODO make this field more data-oriented?
     material: Material,
 
     pub fn init() This {
@@ -374,6 +374,53 @@ pub const SmoothTriangle = struct {
     const This = @This();
 };
 
+pub const CSG = struct {
+    /// constructive solid geometry.
+    pub fn init(op: Operation, left: VolumePool.VolumePtr, right: VolumePool.VolumePtr) This {
+        return .{
+            .op = op,
+            .left = left,
+            .right = right,
+            .material = Material.init(),
+            .transform = trans.Transform{},
+        };
+    }
+
+    pub fn testUnion(left_hit: bool, inside_left: bool, inside_right: bool) bool {
+        return (left_hit and !inside_right) or (!left_hit and !inside_left);
+    }
+
+    pub fn testIntersection(left_hit: bool, inside_left: bool, inside_right: bool) bool {
+        return (left_hit and inside_right) or (!left_hit and inside_left);
+    }
+
+    pub fn testDifference(left_hit: bool, inside_left: bool, inside_right: bool) bool {
+        return (left_hit and !inside_right) or (!left_hit and inside_left);
+    }
+
+    pub fn lookup(self: This, left_hit: bool, inside_left: bool, inside_right: bool) bool {
+        return switch (self.op) {
+            .@"union" => testUnion(left_hit, inside_left, inside_right),
+            .intersection => testIntersection(left_hit, inside_left, inside_right),
+            .difference => testDifference(left_hit, inside_left, inside_right),
+        };
+    }
+
+    material: Material, // XXX: unused but needed to fit api of World
+    transform: trans.Transform,
+
+    op: Operation,
+    left: VolumePool.VolumePtr,
+    right: VolumePool.VolumePtr,
+
+    const This = @This();
+    const Operation = enum {
+        @"union",
+        intersection,
+        difference,
+    };
+};
+
 pub const VolumePool = struct {
     pub fn init(alctr: std.mem.Allocator) This {
         return .{
@@ -386,6 +433,7 @@ pub const VolumePool = struct {
             .triangles_buf = std.ArrayList(Triangle).init(alctr),
             .smooth_triangles_buf = std.ArrayList(SmoothTriangle).init(alctr),
             .lights_buf = std.ArrayList(lght.PointLight).init(alctr),
+            .csgs_buf = std.ArrayList(CSG).init(alctr),
         };
     }
 
@@ -399,6 +447,7 @@ pub const VolumePool = struct {
         self.triangles_buf.deinit();
         self.smooth_triangles_buf.deinit();
         self.lights_buf.deinit();
+        self.csgs_buf.deinit();
     }
 
     /// Create a new volume of type T in the pool and return a handle and pointer to it.
@@ -412,6 +461,7 @@ pub const VolumePool = struct {
             Cone => &self.cones_buf,
             Triangle => &self.triangles_buf,
             SmoothTriangle => &self.smooth_triangles_buf,
+            CSG => &self.csgs_buf,
             else => unreachable,
         };
 
@@ -429,6 +479,11 @@ pub const VolumePool = struct {
                 Vector.init(0, 0, -1),
                 Vector.init(0, 0, -1),
             )) catch unreachable,
+            CSG => buf.append(T.init(
+                .intersection,
+                VolumePtr{ .sphere_idx = 0 },
+                VolumePtr{ .sphere_idx = 1 },
+            )) catch unreachable,
             else => buf.append(T.init()) catch unreachable,
         }
 
@@ -442,6 +497,7 @@ pub const VolumePool = struct {
             Cone => VolumePtr{ .cone_idx = last },
             Triangle => VolumePtr{ .triangle_idx = last },
             SmoothTriangle => VolumePtr{ .smooth_triangle_idx = last },
+            CSG => VolumePtr{ .csg_idx = last },
             else => unreachable,
         };
 
@@ -500,7 +556,26 @@ pub const VolumePool = struct {
             .cone_idx => return &@field(self.cones_buf.items[i], property),
             .triangle_idx => return &@field(self.triangles_buf.items[i], property),
             .smooth_triangle_idx => return &@field(self.smooth_triangles_buf.items[i], property),
+            .csg_idx => return &@field(self.csgs_buf.items[i], property),
         };
+    }
+
+    pub fn CSGIncludes(self: This, haystack: VolumePtr, needle: VolumePtr) bool {
+        if (std.meta.activeTag(haystack) != .csg_idx)
+            return std.meta.eql(haystack, needle);
+
+        if (std.meta.eql(haystack, needle)) return true;
+
+        std.debug.assert(std.meta.activeTag(haystack) == .csg_idx);
+        const haystack_csg = self.csgs_buf.items[haystack.idx()];
+
+        const contains_left = self.CSGIncludes(haystack_csg.left, needle);
+        const contains_right = self.CSGIncludes(haystack_csg.right, needle);
+
+        if (contains_left) std.debug.assert(!contains_right);
+        if (contains_right) std.debug.assert(!contains_left);
+
+        return contains_left or contains_right;
     }
 
     spheres_buf: std.ArrayList(Sphere),
@@ -511,6 +586,7 @@ pub const VolumePool = struct {
     cones_buf: std.ArrayList(Cone),
     triangles_buf: std.ArrayList(Triangle),
     smooth_triangles_buf: std.ArrayList(SmoothTriangle),
+    csgs_buf: std.ArrayList(CSG),
     lights_buf: std.ArrayList(lght.PointLight),
 
     const This = @This();
@@ -525,6 +601,7 @@ pub const VolumePool = struct {
         cone_idx: u16,
         triangle_idx: u16,
         smooth_triangle_idx: u16,
+        csg_idx: u16,
 
         pub fn idx(self: VolumePtr) u16 {
             return switch (self) {
@@ -899,6 +976,86 @@ test "Constructing a smooth triangle" {
     // test that a constructor exists and works
     const tri = test_getSmoothTri();
     _ = tri;
+}
+
+test "Constructing a CSG node" {
+    const sphere = VolumePool.VolumePtr{ .sphere_idx = 0 };
+    const cube = VolumePool.VolumePtr{ .cube_idx = 0 };
+    const csg = CSG.init(.@"union", sphere, cube);
+
+    try expect(csg.op == .@"union");
+    try expect(std.meta.eql(csg.left, sphere));
+    try expect(std.meta.eql(csg.right, cube));
+}
+
+test "CSG union test" {
+    try expect(CSG.testUnion(true, true, true) == false);
+    try expect(CSG.testUnion(true, true, false) == true);
+    try expect(CSG.testUnion(true, false, true) == false);
+    try expect(CSG.testUnion(true, false, false) == true);
+    try expect(CSG.testUnion(false, true, true) == false);
+    try expect(CSG.testUnion(false, true, false) == false);
+    try expect(CSG.testUnion(false, false, true) == true);
+    try expect(CSG.testUnion(false, false, false) == true);
+}
+
+test "CSG intersection test" {
+    try expect(CSG.testIntersection(true, true, true) == true);
+    try expect(CSG.testIntersection(true, true, false) == false);
+    try expect(CSG.testIntersection(true, false, true) == true);
+    try expect(CSG.testIntersection(true, false, false) == false);
+    try expect(CSG.testIntersection(false, true, true) == true);
+    try expect(CSG.testIntersection(false, true, false) == true);
+    try expect(CSG.testIntersection(false, false, true) == false);
+    try expect(CSG.testIntersection(false, false, false) == false);
+}
+
+test "CSG difference test" {
+    try expect(CSG.testDifference(true, true, true) == false);
+    try expect(CSG.testDifference(true, true, false) == true);
+    try expect(CSG.testDifference(true, false, true) == false);
+    try expect(CSG.testDifference(true, false, false) == true);
+    try expect(CSG.testDifference(false, true, true) == true);
+    try expect(CSG.testDifference(false, true, false) == true);
+    try expect(CSG.testDifference(false, false, true) == false);
+    try expect(CSG.testDifference(false, false, false) == false);
+}
+
+test "CSG includes" {
+    const alctr = std.testing.allocator;
+    var pool = VolumePool.init(alctr);
+    defer pool.deinit();
+
+    var sphere = pool.addVolume(Sphere).handle;
+    var sphere2 = pool.addVolume(Sphere).handle;
+    var cube = pool.addVolume(Cube).handle;
+
+    var csg = pool.addVolume(CSG);
+    var csg2 = pool.addVolume(CSG);
+
+    csg.ptr.left = csg2.handle;
+    csg.ptr.right = sphere2;
+
+    csg2.ptr.left = sphere;
+    csg2.ptr.right = cube;
+
+    //     csg
+    //    /   \
+    //  csg2  s2
+    //  / \
+    // s   c
+
+    try expect(pool.CSGIncludes(csg.handle, csg.handle) == true);
+    try expect(pool.CSGIncludes(csg.handle, csg2.handle) == true);
+    try expect(pool.CSGIncludes(csg.handle, sphere) == true);
+    try expect(pool.CSGIncludes(csg.handle, cube) == true);
+    try expect(pool.CSGIncludes(csg.handle, sphere2) == true);
+
+    try expect(pool.CSGIncludes(csg2.handle, csg.handle) == false);
+    try expect(pool.CSGIncludes(csg2.handle, csg2.handle) == true);
+    try expect(pool.CSGIncludes(csg2.handle, sphere) == true);
+    try expect(pool.CSGIncludes(csg2.handle, cube) == true);
+    try expect(pool.CSGIncludes(csg2.handle, sphere2) == false);
 }
 
 const std = @import("std");

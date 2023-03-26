@@ -472,9 +472,9 @@ pub const Intersections = struct {
         greater: ?VolPtr,
     };
 
-    /// Given an intersection, search internal list of intersections and return `exiting`
-    /// and `entering`, where `exiting` is a VolPtr to the object that the hit is escaping,
-    /// and `entering` is a VolPtr to the object that the hit is entering. Both fields of
+    /// Given an intersection, search internal list of intersections and return `greater`
+    /// and `lesser`, where `greater` is a VolPtr to the object that the hit is escaping,
+    /// and `lesser` is a VolPtr to the object that the hit is entering. Both fields of
     /// the return struct are optional, since a hit might be exiting into nothing or vice versa.
     pub fn findBoundaryObjects(self: *This, x: Intersection) Boundary {
         self.order();
@@ -519,6 +519,26 @@ pub const Intersections = struct {
         }
 
         return result;
+    }
+
+    pub fn filterCSG(self: *This, csg: vol.CSG, pool: vol.VolumePool) void {
+        var in_left = false;
+        var in_right = false;
+
+        var i: i32 = 0;
+        while (i < self.ixs.items.len) : (i += 1) {
+            const lhit = pool.CSGIncludes(csg.left, self.ixs.items[@intCast(usize, i)].vptr);
+
+            if (!csg.lookup(lhit, in_left, in_right)) {
+                _ = self.ixs.orderedRemove(@intCast(usize, i));
+                i -= 1;
+            }
+
+            if (lhit)
+                in_left = !in_left
+            else
+                in_right = !in_right;
+        }
     }
 
     const This = @This();
@@ -1346,6 +1366,125 @@ test "A smooth triangle interpolates the normal with uv" {
     try expect(n.equals(Vector.init(-0.5547001962252291, 0.8320502943378437, 0)));
 }
 
+test "CSG intersection filter: union" {
+    const alctr = std.testing.allocator;
+    var pool = vol.VolumePool.init(alctr);
+    defer pool.deinit();
+
+    var sphere = pool.addVolume(vol.Sphere).handle;
+    var cube = pool.addVolume(vol.Cube).handle;
+
+    const tst = struct {
+        fn f(vpool: vol.VolumePool, csg: vol.CSG, xs: *Intersections, x1: Intersection, x2: Intersection) !void {
+            xs.filterCSG(csg, vpool);
+            try expectEq(@as(usize, 2), xs.ixs.items.len);
+            errdefer {
+                print(xs.ixs.items[0]);
+                print(x1);
+                print(xs.ixs.items[1]);
+                print(x2);
+            }
+            try expect(std.meta.eql(xs.ixs.items[0], x1));
+            try expect(std.meta.eql(xs.ixs.items[1], x2));
+        }
+    }.f;
+
+    var xs = Intersections.init(alctr, .{
+        Intersection.init(1, sphere),
+        Intersection.init(2, cube),
+        Intersection.init(3, sphere),
+        Intersection.init(4, cube),
+    });
+    defer xs.deinit();
+
+    const orig_0 = xs.ixs.items[0];
+    // const orig_1 = xs.ixs.items[1];
+    // const orig_2 = xs.ixs.items[2];
+    const orig_3 = xs.ixs.items[3];
+
+    try tst(pool, vol.CSG.init(.@"union", sphere, cube), &xs, orig_0, orig_3);
+    // try tst(pool, vol.CSG.init(.intersection, sphere, cube), &xs, orig_1, orig_2);
+    // try tst(pool, vol.CSG.init(.difference, sphere, cube), &xs, orig_0, orig_1);
+}
+
+test "CSG intersection filter: intersection" {
+    const alctr = std.testing.allocator;
+    var pool = vol.VolumePool.init(alctr);
+    defer pool.deinit();
+
+    var sphere = pool.addVolume(vol.Sphere).handle;
+    var cube = pool.addVolume(vol.Cube).handle;
+
+    const tst = struct {
+        fn f(vpool: vol.VolumePool, csg: vol.CSG, xs: *Intersections, x1: Intersection, x2: Intersection) !void {
+            xs.filterCSG(csg, vpool);
+            try expectEq(@as(usize, 2), xs.ixs.items.len);
+            errdefer {
+                print(xs.ixs.items[0]);
+                print(x1);
+                print(xs.ixs.items[1]);
+                print(x2);
+            }
+            try expect(std.meta.eql(xs.ixs.items[0], x1));
+            try expect(std.meta.eql(xs.ixs.items[1], x2));
+        }
+    }.f;
+
+    var xs = Intersections.init(alctr, .{
+        Intersection.init(1, sphere),
+        Intersection.init(2, cube),
+        Intersection.init(3, sphere),
+        Intersection.init(4, cube),
+    });
+    defer xs.deinit();
+
+    // const orig_0 = xs.ixs.items[0];
+    const orig_1 = xs.ixs.items[1];
+    const orig_2 = xs.ixs.items[2];
+    // const orig_3 = xs.ixs.items[3];
+
+    try tst(pool, vol.CSG.init(.intersection, sphere, cube), &xs, orig_1, orig_2);
+}
+
+test "CSG intersection filter: difference" {
+    const alctr = std.testing.allocator;
+    var pool = vol.VolumePool.init(alctr);
+    defer pool.deinit();
+
+    var sphere = pool.addVolume(vol.Sphere).handle;
+    var cube = pool.addVolume(vol.Cube).handle;
+
+    const tst = struct {
+        fn f(vpool: vol.VolumePool, csg: vol.CSG, xs: *Intersections, x1: Intersection, x2: Intersection) !void {
+            xs.filterCSG(csg, vpool);
+            try expectEq(@as(usize, 2), xs.ixs.items.len);
+            errdefer {
+                print(xs.ixs.items[0]);
+                print(x1);
+                print(xs.ixs.items[1]);
+                print(x2);
+            }
+            try expect(std.meta.eql(xs.ixs.items[0], x1));
+            try expect(std.meta.eql(xs.ixs.items[1], x2));
+        }
+    }.f;
+
+    var xs = Intersections.init(alctr, .{
+        Intersection.init(1, sphere),
+        Intersection.init(2, cube),
+        Intersection.init(3, sphere),
+        Intersection.init(4, cube),
+    });
+    defer xs.deinit();
+
+    const orig_0 = xs.ixs.items[0];
+    const orig_1 = xs.ixs.items[1];
+    // const orig_2 = xs.ixs.items[2];
+    // const orig_3 = xs.ixs.items[3];
+
+    try tst(pool, vol.CSG.init(.difference, sphere, cube), &xs, orig_0, orig_1);
+}
+
 const std = @import("std");
 
 const Tuple = @import("tuple.zig").Tuple;
@@ -1362,4 +1501,5 @@ const vol = @import("volume.zig");
 const prefab = @import("prefab.zig");
 
 const expect = std.testing.expect;
+const expectEq = std.testing.expectEqual;
 const print = @import("u.zig").print;
