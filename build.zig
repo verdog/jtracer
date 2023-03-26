@@ -44,5 +44,5 @@ pub fn build(b: *std.build.Builder) void {
         .target = target,
         .optimize = optimize,
     });
-    test_step.dependOn(&ts.step);
+    test_step.dependOn(&ts.run().step);
 }
