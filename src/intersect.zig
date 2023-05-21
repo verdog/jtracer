@@ -198,7 +198,10 @@ pub const Intersections = struct {
                 // smooth == true
                 self.intersectTriangle(vptr, flat, ray, true);
             },
-            else => unreachable,
+            else => {
+                std.debug.print("{}, {}\n", .{ @TypeOf(volu), std.meta.activeTag(vptr) });
+                unreachable;
+            },
         }
     }
 
@@ -436,6 +439,40 @@ pub const Intersections = struct {
         } else {
             self.ixs.append(Intersection.initUV(f * tri.e2.dot(origin_cross_e1), vptr, u, v)) catch @panic("OOM");
         }
+    }
+
+    fn intersectCSG(self: *This, pool: vol.VolumePool, vptr: VolPtr, csg: vol.CSG, ray: Ray) void {
+        _ = vptr;
+        for ([_]VolPtr{ csg.left, csg.right }) |child| {
+            switch (child) {
+                .csg_idx => {},
+                else => {
+                    var opaque_volu = pool.getVolume(child);
+
+                    // opaque pointer cast
+                    const OPC = struct {
+                        fn f(comptime T: type, ptr: *anyopaque) *T {
+                            return @ptrCast(*T, @alignCast(@alignOf(T), ptr));
+                        }
+                    }.f;
+
+                    switch (child) {
+                        .sphere_idx => self.intersect(OPC(vol.Sphere, opaque_volu).*, child, ray),
+                        .plane_idx => self.intersect(OPC(vol.Plane, opaque_volu).*, child, ray),
+                        .cube_idx => self.intersect(OPC(vol.Cube, opaque_volu).*, child, ray),
+                        .aabb_idx => self.intersect(OPC(vol.AABB, opaque_volu).*, child, ray),
+                        .cylinder_idx => self.intersect(OPC(vol.Cylinder, opaque_volu).*, child, ray),
+                        .cone_idx => self.intersect(OPC(vol.Cone, opaque_volu).*, child, ray),
+                        .triangle_idx => self.intersect(OPC(vol.Triangle, opaque_volu).*, child, ray),
+                        .smooth_triangle_idx => self.intersect(OPC(vol.SmoothTriangle, opaque_volu).*, child, ray),
+                        else => unreachable,
+                    }
+                },
+            }
+        }
+
+        self.order();
+        self.filterCSG(csg, pool);
     }
 
     pub fn clear(self: *This) void {
@@ -1402,7 +1439,7 @@ test "CSG intersection filter: union" {
     // const orig_2 = xs.ixs.items[2];
     const orig_3 = xs.ixs.items[3];
 
-    try tst(pool, vol.CSG.init(.@"union", sphere, cube), &xs, orig_0, orig_3);
+    try tst(pool, vol.CSG.init(.@"union", &pool, sphere, cube), &xs, orig_0, orig_3);
     // try tst(pool, vol.CSG.init(.intersection, sphere, cube), &xs, orig_1, orig_2);
     // try tst(pool, vol.CSG.init(.difference, sphere, cube), &xs, orig_0, orig_1);
 }
@@ -1443,7 +1480,7 @@ test "CSG intersection filter: intersection" {
     const orig_2 = xs.ixs.items[2];
     // const orig_3 = xs.ixs.items[3];
 
-    try tst(pool, vol.CSG.init(.intersection, sphere, cube), &xs, orig_1, orig_2);
+    try tst(pool, vol.CSG.init(.intersection, &pool, sphere, cube), &xs, orig_1, orig_2);
 }
 
 test "CSG intersection filter: difference" {
@@ -1482,7 +1519,98 @@ test "CSG intersection filter: difference" {
     // const orig_2 = xs.ixs.items[2];
     // const orig_3 = xs.ixs.items[3];
 
-    try tst(pool, vol.CSG.init(.difference, sphere, cube), &xs, orig_0, orig_1);
+    try tst(pool, vol.CSG.init(.difference, &pool, sphere, cube), &xs, orig_0, orig_1);
+}
+
+test "A ray misses a CSG" {
+    const alctr = std.testing.allocator;
+
+    var pool = vol.VolumePool.init(alctr);
+    defer pool.deinit();
+
+    var sph = pool.addVolume(vol.Sphere);
+    var cub = pool.addVolume(vol.Cube);
+
+    var csg = pool.addVolume(vol.CSG);
+    csg.ptr.left = sph.handle;
+    csg.ptr.right = cub.handle;
+
+    var ray = Ray.init(Point.init(0, 2, -5), Vector.init(0, 0, 1));
+
+    var xs = Intersections.init(alctr, .{});
+    defer xs.deinit();
+
+    xs.intersectCSG(pool, csg.handle, csg.ptr.*, ray);
+
+    try expect(xs.ixs.items.len == 0);
+}
+
+test "A ray hits a CSG" {
+    const alctr = std.testing.allocator;
+
+    var pool = vol.VolumePool.init(alctr);
+    defer pool.deinit();
+
+    var sph = pool.addVolume(vol.Sphere);
+    var sp2 = pool.addVolume(vol.Sphere);
+
+    sp2.ptr.transform = trans.makeTranslation(0, 0, 0.5);
+
+    var csg = pool.addVolume(vol.CSG);
+    csg.ptr.op = .@"union";
+    csg.ptr.left = sph.handle;
+    csg.ptr.right = sp2.handle;
+
+    var ray = Ray.init(Point.init(0, 0, -5), Vector.init(0, 0, 1));
+
+    var xs = Intersections.init(alctr, .{});
+    defer xs.deinit();
+
+    xs.intersectCSG(pool, csg.handle, csg.ptr.*, ray);
+
+    try expectEq(@as(usize, 2), xs.ixs.items.len);
+    try expect(xs.ixs.items[0].t == 4);
+    try expect(std.meta.eql(xs.ixs.items[0].vptr, sph.handle));
+    try expect(xs.ixs.items[1].t == 6.5);
+    try expect(std.meta.eql(xs.ixs.items[1].vptr, sp2.handle));
+}
+
+test "A ray hits a csg tree" {
+    const alctr = std.testing.allocator;
+    var pool = vol.VolumePool.init(alctr);
+    defer pool.deinit();
+
+    // var sphere = pool.addVolume(Sphere).handle;
+    // var sphere2 = pool.addVolume(Sphere).handle;
+    // var cube = pool.addVolume(Cube).handle;
+
+    // var csg = pool.addVolume(CSG);
+    // var csg2 = pool.addVolume(CSG);
+
+    // csg.ptr.left = csg2.handle;
+    // csg.ptr.right = sphere2;
+
+    // csg2.ptr.left = sphere;
+    // csg2.ptr.right = cube;
+
+    // //     csg
+    // //    /   \
+    // //  csg2  s2
+    // //  / \
+    // // s   c
+
+    // var ray = Ray.init(Point.init(0, 0, -5), Vector.init(0, 0, 1));
+
+    // var xs = Intersections.init(alctr, .{});
+    // defer xs.deinit();
+
+    // xs.intersectCSG(pool, csg.handle, csg.ptr.*, ray);
+
+    // try expectEq(@as(usize, 2), xs.ixs.items.len);
+    // try expect(xs.ixs.items[0].t == 4);
+    // try expect(std.meta.eql(xs.ixs.items[0].vptr, sph.handle));
+    // try expect(xs.ixs.items[1].t == 6.5);
+    // try expect(std.meta.eql(xs.ixs.items[1].vptr, sp2.handle));
 }
 
 const std = @import("std");

@@ -20,9 +20,9 @@ pub fn build(b: *std.build.Builder) void {
     exe.addModule("sdl2", SDL.getWrapperModule());
     exe.linkSystemLibrary("sdl2_image");
 
-    exe.install();
+    b.installArtifact(exe);
 
-    const run_cmd = exe.run();
+    const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| {
         run_cmd.addArgs(args);
@@ -36,5 +36,5 @@ pub fn build(b: *std.build.Builder) void {
         .root_source_file = .{ .path = "src/main.zig" },
         .optimize = optimize,
     });
-    test_step.dependOn(&ts.run().step);
+    test_step.dependOn(&b.addRunArtifact(ts).step);
 }

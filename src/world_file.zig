@@ -2112,7 +2112,7 @@ test "obj: parse vertex normals" {
     try ex(obj.vertex_normals[2].equals(Vector.init(1, 2, 3)));
 }
 
-test "obj: parse vertex normals" {
+test "obj: parse vertex normals 2" {
     const txt =
         \\v 0 1 0
         \\v -1 0 0

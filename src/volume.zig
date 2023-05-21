@@ -376,9 +376,10 @@ pub const SmoothTriangle = struct {
 
 pub const CSG = struct {
     /// constructive solid geometry.
-    pub fn init(op: Operation, left: VolumePool.VolumePtr, right: VolumePool.VolumePtr) This {
+    pub fn init(op: Operation, pool: *const VolumePool, left: VolumePool.VolumePtr, right: VolumePool.VolumePtr) This {
         return .{
             .op = op,
+            .pool = pool,
             .left = left,
             .right = right,
             .material = Material.init(),
@@ -410,6 +411,7 @@ pub const CSG = struct {
     transform: trans.Transform,
 
     op: Operation,
+    pool: *const VolumePool,
     left: VolumePool.VolumePtr,
     right: VolumePool.VolumePtr,
 
@@ -480,7 +482,7 @@ pub const VolumePool = struct {
                 Vector.init(0, 0, -1),
             )) catch unreachable,
             CSG => buf.append(T.init(
-                .intersection,
+                .@"union",
                 VolumePtr{ .sphere_idx = 0 },
                 VolumePtr{ .sphere_idx = 1 },
             )) catch unreachable,
@@ -504,6 +506,38 @@ pub const VolumePool = struct {
         return .{
             .handle = handle,
             .ptr = &buf.items[last],
+        };
+    }
+
+    fn getTypedVolume(self: This, vptr: VolumePtr, comptime T: type) *anyopaque {
+        const i = vptr.idx();
+        var buf = switch (T) {
+            Sphere => &self.spheres_buf,
+            Plane => &self.planes_buf,
+            Cube => &self.cubes_buf,
+            AABB => &self.aabbs_buf,
+            Cylinder => &self.cylinders_buf,
+            Cone => &self.cones_buf,
+            Triangle => &self.triangles_buf,
+            SmoothTriangle => &self.smooth_triangles_buf,
+            CSG => &self.csgs_buf,
+            else => unreachable,
+        };
+
+        return &buf.items[i];
+    }
+
+    pub fn getVolume(self: This, vptr: VolumePtr) *anyopaque {
+        return switch (vptr) {
+            .sphere_idx => self.getTypedVolume(vptr, Sphere),
+            .plane_idx => self.getTypedVolume(vptr, Plane),
+            .cube_idx => self.getTypedVolume(vptr, Cube),
+            .aabb_idx => self.getTypedVolume(vptr, AABB),
+            .cylinder_idx => self.getTypedVolume(vptr, Cylinder),
+            .cone_idx => self.getTypedVolume(vptr, Cone),
+            .triangle_idx => self.getTypedVolume(vptr, Triangle),
+            .smooth_triangle_idx => self.getTypedVolume(vptr, SmoothTriangle),
+            .csg_idx => self.getTypedVolume(vptr, CSG),
         };
     }
 
@@ -979,9 +1013,12 @@ test "Constructing a smooth triangle" {
 }
 
 test "Constructing a CSG node" {
+    const alctr = std.testing.allocator;
     const sphere = VolumePool.VolumePtr{ .sphere_idx = 0 };
     const cube = VolumePool.VolumePtr{ .cube_idx = 0 };
-    const csg = CSG.init(.@"union", sphere, cube);
+    const pool = VolumePool.init(alctr);
+    defer pool.deinit();
+    const csg = CSG.init(.@"union", &pool, sphere, cube);
 
     try expect(csg.op == .@"union");
     try expect(std.meta.eql(csg.left, sphere));
