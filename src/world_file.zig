@@ -665,7 +665,7 @@ fn findSectionBounds(txt: []const u8) struct { min: ?usize, max: usize } {
             }
         }.lt;
 
-        std.sort.insertionSort(?usize, &keys_idxs, {}, lt);
+        std.sort.insertion(?usize, &keys_idxs, {}, lt);
 
         break :blk keys_idxs[0].?;
     };
@@ -683,7 +683,7 @@ fn findSectionBounds(txt: []const u8) struct { min: ?usize, max: usize } {
             }
         }.lt;
 
-        std.sort.insertionSort(?usize, &keys_idxs, {}, lt);
+        std.sort.insertion(?usize, &keys_idxs, {}, lt);
 
         break :blk keys_idxs[0] orelse txt.len;
     };

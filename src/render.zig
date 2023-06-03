@@ -81,7 +81,7 @@ fn getChunks(w: i64, qan: Qanvas, alctr: std.mem.Allocator) []Chunk {
     }.f;
 
     // sort chunks by distance from center to attempt to render the focus of the image first
-    std.sort.sort(Chunk, chunks.items, qan, closeToCenter);
+    std.sort.block(Chunk, chunks.items, qan, closeToCenter);
 
     // TODO add this as a setting
     // var prng = std.rand.DefaultPrng.init(0);

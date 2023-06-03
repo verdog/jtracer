@@ -487,7 +487,7 @@ pub const Intersections = struct {
             }
         }.lt;
 
-        std.sort.insertionSort(Intersection, self.ixs.items, {}, lt);
+        std.sort.insertion(Intersection, self.ixs.items, {}, lt);
     }
 
     pub fn hit(self: *This) ?Intersection {
