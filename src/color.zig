@@ -20,7 +20,7 @@ pub const Color = struct {
     pub fn equalsTolerance(self: This, other: This, tolerance: usize) bool {
         const diff = @fabs(self.vec - other.vec);
         const max_diff = @reduce(.Max, diff);
-        return max_diff <= std.math.floatEps(f64) * @intToFloat(f64, tolerance);
+        return max_diff <= std.math.floatEps(f64) * @as(f64, @floatFromInt(tolerance));
     }
 
     pub fn red(self: This) f64 {

@@ -32,27 +32,27 @@ pub const World = struct {
         ixs.clear();
 
         for (self.pool.spheres_buf.items, 0..) |*ptr, i| {
-            const vptr = VolPtr{ .sphere_idx = @intCast(u16, i) };
+            const vptr = VolPtr{ .sphere_idx = @intCast(i) };
             ixs.intersect(ptr.*, vptr, ray);
         }
 
         for (self.pool.planes_buf.items, 0..) |*ptr, i| {
-            const vptr = VolPtr{ .plane_idx = @intCast(u16, i) };
+            const vptr = VolPtr{ .plane_idx = @intCast(i) };
             ixs.intersect(ptr.*, vptr, ray);
         }
 
         for (self.pool.cubes_buf.items, 0..) |*ptr, i| {
-            const vptr = VolPtr{ .cube_idx = @intCast(u16, i) };
+            const vptr = VolPtr{ .cube_idx = @intCast(i) };
             ixs.intersect(ptr.*, vptr, ray);
         }
 
         for (self.pool.cylinders_buf.items, 0..) |*ptr, i| {
-            const vptr = VolPtr{ .cylinder_idx = @intCast(u16, i) };
+            const vptr = VolPtr{ .cylinder_idx = @intCast(i) };
             ixs.intersect(ptr.*, vptr, ray);
         }
 
         for (self.pool.cones_buf.items, 0..) |*ptr, i| {
-            const vptr = VolPtr{ .cone_idx = @intCast(u16, i) };
+            const vptr = VolPtr{ .cone_idx = @intCast(i) };
             ixs.intersect(ptr.*, vptr, ray);
         }
 
@@ -65,8 +65,8 @@ pub const World = struct {
                         for (buf, 0..) |v, j| {
                             const idx = aabb.first_idx + j;
                             const vptr = switch (aabb.range) {
-                                .flat => VolPtr{ .triangle_idx = @intCast(u16, idx) },
-                                .smooth => VolPtr{ .smooth_triangle_idx = @intCast(u16, idx) },
+                                .flat => VolPtr{ .triangle_idx = @intCast(idx) },
+                                .smooth => VolPtr{ .smooth_triangle_idx = @intCast(idx) },
                             };
                             ixs.intersect(v, vptr, ray);
                         }
@@ -214,7 +214,7 @@ pub const Camera = struct {
     pixel_size: f64,
 
     pub fn init(width: i64, height: i64, fov: f64) This {
-        const aspect = @intToFloat(f64, width) / @intToFloat(f64, height);
+        const aspect = @as(f64, @floatFromInt(width)) / @as(f64, @floatFromInt(height));
 
         var half_width: f64 = undefined;
         var half_height: f64 = undefined;
@@ -230,7 +230,7 @@ pub const Camera = struct {
                 half_height = half_view;
             }
 
-            break :blk (half_width * 2.0) / @intToFloat(f64, width);
+            break :blk (half_width * 2.0) / @as(f64, @floatFromInt(width));
         };
 
         return .{
@@ -247,8 +247,8 @@ pub const Camera = struct {
     pub fn rayForPixel(self: This, x: i64, y: i64) Ray {
         // page 104
         // the offset from the edge of the canvas to the pixel's center
-        const x_offset = (@intToFloat(f64, x) + 0.5) * self.pixel_size;
-        const y_offset = (@intToFloat(f64, y) + 0.5) * self.pixel_size;
+        const x_offset = (@as(f64, @floatFromInt(x)) + 0.5) * self.pixel_size;
+        const y_offset = (@as(f64, @floatFromInt(y)) + 0.5) * self.pixel_size;
 
         // the untransformed coordinates of the pixel in world space.
         // (camera looks toward -z, so +x is to the *left*)
@@ -522,7 +522,7 @@ test "Rendering a world with a camera" {
     const up = Vector.init(0, 1, 0);
     c.transform = tran.makeView(from, to, up);
 
-    var qan = try Qanvas.init(alctr, @intCast(usize, c.width), @intCast(usize, c.height));
+    var qan = try Qanvas.init(alctr, @intCast(c.width), @intCast(c.height));
     defer qan.deinit();
 
     w.render(c, &qan, alctr);

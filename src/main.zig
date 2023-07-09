@@ -48,8 +48,8 @@ pub fn main() !void {
 
     var qan = try Qanvas.init(
         gpa,
-        @intCast(usize, scene_file.camera.width),
-        @intCast(usize, scene_file.camera.height),
+        @intCast(scene_file.camera.width),
+        @intCast(scene_file.camera.height),
     );
     defer qan.deinit();
 
@@ -81,7 +81,7 @@ pub fn main() !void {
     var qix_tex = try imgio.encodeQanvasAsQixel(qan, gpa);
     defer gpa.free(qix_tex);
 
-    var sdl_tex = try imgio.encodeQixelsAsSdl(qix_tex, sdl_renderer, @intCast(u32, qan.width), @intCast(u32, qan.height));
+    var sdl_tex = try imgio.encodeQixelsAsSdl(qix_tex, sdl_renderer, @intCast(qan.width), @intCast(qan.height));
     defer sdl_tex.destroy();
 
     {
@@ -113,7 +113,7 @@ pub fn main() !void {
             }
 
             try imgio.encodeQanvasAsQixelUpdate(qan, qix_tex);
-            try imgio.encodeQixelsAsSdlUpdate(qix_tex, &sdl_tex, @intCast(u32, qan.width));
+            try imgio.encodeQixelsAsSdlUpdate(qix_tex, &sdl_tex, @intCast(qan.width));
 
             try sdl_renderer.copy(sdl_tex, null, null);
             sdl_renderer.present();

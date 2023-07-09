@@ -251,8 +251,8 @@ pub const Intersections = struct {
         const y_axis = checkCubeAxis(td_ray.origin.y(), td_ray.direction.y(), -1, 1);
         const z_axis = checkCubeAxis(td_ray.origin.z(), td_ray.direction.z(), -1, 1);
 
-        const tmin = std.math.max3(x_axis.tmin, y_axis.tmin, z_axis.tmin);
-        const tmax = std.math.min3(x_axis.tmax, y_axis.tmax, z_axis.tmax);
+        const tmin = @max(x_axis.tmin, y_axis.tmin, z_axis.tmin);
+        const tmax = @min(x_axis.tmax, y_axis.tmax, z_axis.tmax);
 
         if (tmin > tmax) return; // no hit
 
@@ -267,8 +267,8 @@ pub const Intersections = struct {
         const y_axis = checkCubeAxis(td_ray.origin.y(), td_ray.direction.y(), aabb.bounds.min_y, aabb.bounds.max_y);
         const z_axis = checkCubeAxis(td_ray.origin.z(), td_ray.direction.z(), aabb.bounds.min_z, aabb.bounds.max_z);
 
-        const tmin = std.math.max3(x_axis.tmin, y_axis.tmin, z_axis.tmin);
-        const tmax = std.math.min3(x_axis.tmax, y_axis.tmax, z_axis.tmax);
+        const tmin = @max(x_axis.tmin, y_axis.tmin, z_axis.tmin);
+        const tmax = @min(x_axis.tmax, y_axis.tmax, z_axis.tmax);
 
         if (tmin > tmax) return; // no hit
 
@@ -283,8 +283,8 @@ pub const Intersections = struct {
         const y_axis = checkCubeAxis(td_ray.origin.y(), td_ray.direction.y(), aabb.bounds.min_y, aabb.bounds.max_y);
         const z_axis = checkCubeAxis(td_ray.origin.z(), td_ray.direction.z(), aabb.bounds.min_z, aabb.bounds.max_z);
 
-        const tmin = std.math.max3(x_axis.tmin, y_axis.tmin, z_axis.tmin);
-        const tmax = std.math.min3(x_axis.tmax, y_axis.tmax, z_axis.tmax);
+        const tmin = @max(x_axis.tmin, y_axis.tmin, z_axis.tmin);
+        const tmax = @min(x_axis.tmax, y_axis.tmax, z_axis.tmax);
 
         if (tmin > tmax) return false; // no hit
         return true;
@@ -452,7 +452,7 @@ pub const Intersections = struct {
                     // opaque pointer cast
                     const OPC = struct {
                         fn f(comptime T: type, ptr: *anyopaque) *T {
-                            return @ptrCast(*T, @alignCast(@alignOf(T), ptr));
+                            return @as(*T, @ptrCast(@alignCast(ptr)));
                         }
                     }.f;
 
@@ -564,10 +564,10 @@ pub const Intersections = struct {
 
         var i: i32 = 0;
         while (i < self.ixs.items.len) : (i += 1) {
-            const lhit = pool.CSGIncludes(csg.left, self.ixs.items[@intCast(usize, i)].vptr);
+            const lhit = pool.CSGIncludes(csg.left, self.ixs.items[@intCast(i)].vptr);
 
             if (!csg.lookup(lhit, in_left, in_right)) {
-                _ = self.ixs.orderedRemove(@intCast(usize, i));
+                _ = self.ixs.orderedRemove(@intCast(i));
                 i -= 1;
             }
 

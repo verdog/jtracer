@@ -38,36 +38,36 @@ pub const Qanvas = struct {
 
     pub fn ithPixelCoords(self: This, i: usize) struct { x: i64, y: i64 } {
         return .{
-            .x = @intCast(i64, i % self.width),
-            .y = @intCast(i64, @divTrunc(i, self.width)),
+            .x = @intCast(i % self.width),
+            .y = @intCast(@divTrunc(i, self.width)),
         };
     }
 
     pub fn at(self: This, x: i64, y: i64) Color {
-        const idx = y * @intCast(i64, self.width) + x;
-        if (idx < 0 or idx >= @intCast(i64, self.pixels.len)) return Color.init(0, 0, 0);
+        const idx = y * @as(i64, @intCast(self.width)) + x;
+        if (idx < 0 or idx >= @as(i64, @intCast(self.pixels.len))) return Color.init(0, 0, 0);
 
-        return self.pixels[@intCast(usize, idx)];
+        return self.pixels[@intCast(idx)];
     }
 
     pub fn write(self: This, color: Color, x: i64, y: i64) void {
-        const idx = y * @intCast(i64, self.width) + x;
-        if (idx < 0 or idx >= @intCast(i64, self.pixels.len)) return;
+        const idx = y * @as(i64, @intCast(self.width)) + x;
+        if (idx < 0 or idx >= @as(i64, @intCast(self.pixels.len))) return;
 
-        self.pixels[@intCast(usize, idx)] = color;
+        self.pixels[@intCast(idx)] = color;
     }
 
     pub fn fill(self: This, x: i64, y: i64, width: i64, height: i64, color: Color) void {
         if (width <= 0 or height <= 0) return;
 
-        const start_x: u64 = @intCast(u64, @max(0, x));
-        const start_y: u64 = @intCast(u64, @max(0, y));
-        const end_x: u64 = @intCast(u64, @min(@intCast(i64, self.width) - 1, x + width - 1));
-        const end_y: u64 = @intCast(u64, @min(@intCast(i64, self.height) - 1, y + height - 1));
+        const start_x: u64 = @intCast(@max(0, x));
+        const start_y: u64 = @intCast(@max(0, y));
+        const end_x: u64 = @intCast(@min(@as(i64, @intCast(self.width)) - 1, x + width - 1));
+        const end_y: u64 = @intCast(@min(@as(i64, @intCast(self.height)) - 1, y + height - 1));
 
         for (start_y..end_y + 1) |y_pix| {
             for (start_x..end_x + 1) |x_pix| {
-                self.write(color, @intCast(i64, x_pix), @intCast(i64, y_pix));
+                self.write(color, @intCast(x_pix), @intCast(y_pix));
             }
         }
     }

@@ -66,7 +66,7 @@ pub fn Matrix(comptime _rows: usize, comptime _cols: usize) type {
         pub fn equalsTolerance(self: This, other: This, tolerance: usize) bool {
             const diff = @fabs(self.vec - other.vec);
             const max_diff = @reduce(.Max, diff);
-            return max_diff <= std.math.floatEps(f64) * @intToFloat(f64, tolerance);
+            return max_diff <= std.math.floatEps(f64) * @as(f64, @floatFromInt(tolerance));
         }
 
         fn sliceRows(self: This) [This.compt_rows]@Vector(This.compt_columns, f64) {

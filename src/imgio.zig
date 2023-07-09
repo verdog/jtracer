@@ -14,7 +14,7 @@ pub fn encodeQanvasAsQoi(qan: Qanvas, alctr: std.mem.Allocator) ![]u8 {
         q.* = qoi.Qixel.fromColor(qan.pixels[i]);
     }
 
-    return try qoi.encode(qixels, alctr, @intCast(u32, qan.width), @intCast(u32, qan.height), .rgb, .all_linear);
+    return try qoi.encode(qixels, alctr, @intCast(qan.width), @intCast(qan.height), .rgb, .all_linear);
 }
 
 pub fn encodeQanvasAsQixel(qan: Qanvas, alctr: std.mem.Allocator) ![]qoi.Qixel {
@@ -42,7 +42,7 @@ pub fn encodeQixelsAsSdl(qix: []qoi.Qixel, renderer: sdl2.Renderer, width: u32, 
 }
 
 pub fn encodeQixelsAsSdlUpdate(qix: []qoi.Qixel, tex: *sdl2.Texture, width: u32) !void {
-    try tex.update(@ptrCast(*const []u8, &qix).*, width * @sizeOf(qoi.Qixel), null);
+    try tex.update(@as(*const []u8, @ptrCast(&qix)).*, width * @sizeOf(qoi.Qixel), null);
 }
 
 pub fn saveBufAsFile(buf: []const u8, filename: []const u8) !void {

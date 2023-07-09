@@ -33,8 +33,8 @@ fn getChunks(w: i64, qan: Qanvas, alctr: std.mem.Allocator) []Chunk {
     const y_w = w;
     std.debug.assert(@popCount(w) == 1);
 
-    const chunks_x = @divTrunc(@intCast(i64, qan.width) -| 1, w) + 1;
-    const chunks_y = @divTrunc(@intCast(i64, qan.height) -| 1, y_w) + 1;
+    const chunks_x = @divTrunc(@as(i64, @intCast(qan.width)) -| 1, w) + 1;
+    const chunks_y = @divTrunc(@as(i64, @intCast(qan.height)) -| 1, y_w) + 1;
 
     var y: i64 = 0;
     while (y < chunks_y) : (y += 1) {
@@ -42,9 +42,9 @@ fn getChunks(w: i64, qan: Qanvas, alctr: std.mem.Allocator) []Chunk {
         while (x < chunks_x) : (x += 1) {
             chunks.append(.{
                 .start_x = w * x,
-                .end_x = @min(@intCast(i64, qan.width), w * (x + 1)),
+                .end_x = @min(@as(i64, @intCast(qan.width)), w * (x + 1)),
                 .start_y = y_w * y,
-                .end_y = @min(@intCast(i64, qan.height), y_w * (y + 1)),
+                .end_y = @min(@as(i64, @intCast(qan.height)), y_w * (y + 1)),
                 .pixel_size = w,
             }) catch unreachable;
         }
@@ -61,18 +61,18 @@ fn getChunks(w: i64, qan: Qanvas, alctr: std.mem.Allocator) []Chunk {
                 .y = @divTrunc(rhs.start_y + rhs.end_y, 2),
             };
             const center_canvas = .{
-                .x = @intCast(i64, @divTrunc(qan_ctx.width, 2)),
-                .y = @intCast(i64, @divTrunc(qan_ctx.height, 2)),
+                .x = @as(i64, @intCast(@divTrunc(qan_ctx.width, 2))),
+                .y = @as(i64, @intCast(@divTrunc(qan_ctx.height, 2))),
             };
 
             const left_distance = blk: {
-                const dx = @intToFloat(f64, center_left.x - center_canvas.x);
-                const dy = @intToFloat(f64, center_left.y - center_canvas.y);
+                const dx = @as(f64, @floatFromInt(center_left.x - center_canvas.x));
+                const dy = @as(f64, @floatFromInt(center_left.y - center_canvas.y));
                 break :blk @sqrt(dx * dx + dy * dy);
             };
             const right_distance = blk: {
-                const dx = @intToFloat(f64, center_right.x - center_canvas.x);
-                const dy = @intToFloat(f64, center_right.y - center_canvas.y);
+                const dx = @as(f64, @floatFromInt(center_right.x - center_canvas.x));
+                const dy = @as(f64, @floatFromInt(center_right.y - center_canvas.y));
                 break :blk @sqrt(dx * dx + dy * dy);
             };
 
@@ -111,13 +111,16 @@ pub fn startRenderEngine(world: World, cam: Camera, qan: *Qanvas, alctr: std.mem
     };
 
     const cpus = std.Thread.getCpuCount() catch unreachable;
-    const num_threads = @max(1, @divTrunc(cpus * 3, 4));
-    std.debug.print("Using {} threads.\n", .{@min(num_threads, 16)});
+    // const num_threads = @max(1, @divTrunc(cpus * 3, 4));
+    const num_threads = cpus;
+    std.debug.print("Using {} threads.\n", .{num_threads});
 
-    var threads_idle_buf = [_]bool{true} ** 16;
+    const threads_buf_size = 32;
+    var threads_idle_buf = [_]bool{true} ** threads_buf_size;
+    std.debug.assert(threads_idle_buf.len >= num_threads);
     var threads_idle = threads_idle_buf[0..num_threads];
 
-    var threads_working_mem_buf = [_][]u8{undefined} ** 16;
+    var threads_working_mem_buf = [_][]u8{undefined} ** threads_buf_size;
     var threads_working_mem = threads_working_mem_buf[0..num_threads];
 
     for (threads_working_mem) |*slc| {
@@ -128,7 +131,7 @@ pub fn startRenderEngine(world: World, cam: Camera, qan: *Qanvas, alctr: std.mem
         alctr.free(slc);
     };
 
-    var threads_alctrs_buf = [_]std.heap.FixedBufferAllocator{undefined} ** 16;
+    var threads_alctrs_buf = [_]std.heap.FixedBufferAllocator{undefined} ** threads_buf_size;
     var threads_alctrs = threads_alctrs_buf[0..num_threads];
 
     for (threads_alctrs, 0..) |*alc, i| {
@@ -206,7 +209,7 @@ pub fn startRenderEngine(world: World, cam: Camera, qan: *Qanvas, alctr: std.mem
     }
 
     prog.end();
-    std.debug.print("Done in {d:.3} seconds.\n", .{@intToFloat(f64, timer.read()) / 1_000_000_000});
+    std.debug.print("Done in {d:.3} seconds.\n", .{@as(f64, @floatFromInt(timer.read())) / 1_000_000_000});
 }
 
 fn render(

@@ -76,7 +76,7 @@ pub const Cube = struct {
             // equal one, so we use the second pattern in practice. for corners, we return the
             // normal from the +-x face.
 
-            const max_component = std.math.max3(
+            const max_component = @max(
                 @fabs(obj_space_point.x()),
                 @fabs(obj_space_point.y()),
                 @fabs(obj_space_point.z()),
@@ -483,13 +483,14 @@ pub const VolumePool = struct {
             )) catch unreachable,
             CSG => buf.append(T.init(
                 .@"union",
+                self,
                 VolumePtr{ .sphere_idx = 0 },
                 VolumePtr{ .sphere_idx = 1 },
             )) catch unreachable,
             else => buf.append(T.init()) catch unreachable,
         }
 
-        const last = @intCast(u16, buf.items.len - 1);
+        const last = @as(u16, @intCast(buf.items.len - 1));
         const handle = switch (T) {
             Sphere => VolumePtr{ .sphere_idx = last },
             Plane => VolumePtr{ .plane_idx = last },
@@ -550,7 +551,7 @@ pub const VolumePool = struct {
                 const point = @import("tuple.zig").Point.init(0, 0, 0);
                 const color = @import("color.zig").Color.init(1, 1, 1);
                 self.lights_buf.append(lght.PointLight.init(point, color)) catch unreachable;
-                const last = @intCast(u16, self.lights_buf.items.len - 1);
+                const last = @as(u16, @intCast(self.lights_buf.items.len - 1));
                 return .{
                     .handle = LightPtr{ .light_idx = last },
                     .ptr = &self.lights_buf.items[last],

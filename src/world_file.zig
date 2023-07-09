@@ -413,12 +413,12 @@ pub fn parseWorldText(txt: []const u8, alctr: std.mem.Allocator) !FileContents {
             .flat => {
                 // find extents in object space
                 for (world.pool.triangles_buf.items[tblock.start..tblock.end]) |t| {
-                    bs.min_x = @min(std.math.min3(t.p1.x(), t.p2.x(), t.p3.x()), bs.min_x);
-                    bs.min_y = @min(std.math.min3(t.p1.y(), t.p2.y(), t.p3.y()), bs.min_y);
-                    bs.min_z = @min(std.math.min3(t.p1.z(), t.p2.z(), t.p3.z()), bs.min_z);
-                    bs.max_x = @max(std.math.max3(t.p1.x(), t.p2.x(), t.p3.x()), bs.max_x);
-                    bs.max_y = @max(std.math.max3(t.p1.y(), t.p2.y(), t.p3.y()), bs.max_y);
-                    bs.max_z = @max(std.math.max3(t.p1.z(), t.p2.z(), t.p3.z()), bs.max_z);
+                    bs.min_x = @min(t.p1.x(), t.p2.x(), t.p3.x(), bs.min_x);
+                    bs.min_y = @min(t.p1.y(), t.p2.y(), t.p3.y(), bs.min_y);
+                    bs.min_z = @min(t.p1.z(), t.p2.z(), t.p3.z(), bs.min_z);
+                    bs.max_x = @max(t.p1.x(), t.p2.x(), t.p3.x(), bs.max_x);
+                    bs.max_y = @max(t.p1.y(), t.p2.y(), t.p3.y(), bs.max_y);
+                    bs.max_z = @max(t.p1.z(), t.p2.z(), t.p3.z(), bs.max_z);
                 }
                 // assuming all tforms are the same
                 transform = world.pool.triangles_buf.items[tblock.start].transform;
@@ -426,12 +426,12 @@ pub fn parseWorldText(txt: []const u8, alctr: std.mem.Allocator) !FileContents {
             .smooth => {
                 // find extents in object space
                 for (world.pool.smooth_triangles_buf.items[tblock.start..tblock.end]) |t| {
-                    bs.min_x = @min(std.math.min3(t.p1.x(), t.p2.x(), t.p3.x()), bs.min_x);
-                    bs.min_y = @min(std.math.min3(t.p1.y(), t.p2.y(), t.p3.y()), bs.min_y);
-                    bs.min_z = @min(std.math.min3(t.p1.z(), t.p2.z(), t.p3.z()), bs.min_z);
-                    bs.max_x = @max(std.math.max3(t.p1.x(), t.p2.x(), t.p3.x()), bs.max_x);
-                    bs.max_y = @max(std.math.max3(t.p1.y(), t.p2.y(), t.p3.y()), bs.max_y);
-                    bs.max_z = @max(std.math.max3(t.p1.z(), t.p2.z(), t.p3.z()), bs.max_z);
+                    bs.min_x = @min(t.p1.x(), t.p2.x(), t.p3.x(), bs.min_x);
+                    bs.min_y = @min(t.p1.y(), t.p2.y(), t.p3.y(), bs.min_y);
+                    bs.min_z = @min(t.p1.z(), t.p2.z(), t.p3.z(), bs.min_z);
+                    bs.max_x = @max(t.p1.x(), t.p2.x(), t.p3.x(), bs.max_x);
+                    bs.max_y = @max(t.p1.y(), t.p2.y(), t.p3.y(), bs.max_y);
+                    bs.max_z = @max(t.p1.z(), t.p2.z(), t.p3.z(), bs.max_z);
                 }
                 // assuming all tforms are the same
                 transform = world.pool.smooth_triangles_buf.items[tblock.start].transform;
@@ -823,10 +823,10 @@ fn parseCamera(txt: []const u8) !Camera {
         return unimplementedError();
 
     scale = scale orelse 1;
-    const fwidth = @intToFloat(f64, width.?) * scale.?;
-    const fheight = @intToFloat(f64, height.?) * scale.?;
+    const fwidth = @as(f64, @floatFromInt(width.?)) * scale.?;
+    const fheight = @as(f64, @floatFromInt(height.?)) * scale.?;
 
-    var camera = Camera.init(@floatToInt(i64, fwidth), @floatToInt(i64, fheight), fov.?);
+    var camera = Camera.init(@as(i64, @intFromFloat(fwidth)), @as(i64, @intFromFloat(fheight)), fov.?);
     camera.transform = trans.makeView(
         Point.init(from.?.a, from.?.b, from.?.c),
         Point.init(to.?.a, to.?.b, to.?.c),
