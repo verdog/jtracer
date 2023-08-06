@@ -36,15 +36,15 @@ pub const Tuple = struct {
 
     pub fn negated(self: This) This {
         const zero: f64 = 0;
-        return This{ .vec = @splat(4, zero) - self.vec };
+        return This{ .vec = @as(@Vector(4, f64), @splat(zero)) - self.vec };
     }
 
     pub fn scaled(self: This, f: f64) This {
-        return This{ .vec = self.vec * @splat(4, f) };
+        return This{ .vec = self.vec * @as(@Vector(4, f64), @splat(f)) };
     }
 
     pub fn divided(self: This, f: f64) This {
-        return This{ .vec = self.vec / @splat(4, f) };
+        return This{ .vec = self.vec / @as(@Vector(4, f64), @splat(f)) };
     }
 
     pub fn magnitude(self: This) f64 {
@@ -53,7 +53,7 @@ pub const Tuple = struct {
 
     pub fn normalized(self: This) This {
         std.debug.assert(self.magnitude() != 0);
-        var r = This{ .vec = self.vec / @splat(4, self.magnitude()) };
+        var r = This{ .vec = self.vec / @as(@Vector(4, f64), @splat(self.magnitude())) };
         r.vec[3] = self.vec[3];
         return r;
     }
@@ -75,8 +75,8 @@ pub const Tuple = struct {
 
     pub fn reflected(self: This, normal: This) This {
         const two: f64 = 2.0;
-        const vtwo = @splat(4, two);
-        return This{ .vec = self.vec - normal.vec * vtwo * @splat(4, @reduce(.Add, self.vec * normal.vec)) };
+        const vtwo = @as(@Vector(4, f64), @splat(two));
+        return This{ .vec = self.vec - normal.vec * vtwo * @as(@Vector(4, f64), @splat(@reduce(.Add, self.vec * normal.vec))) };
     }
 
     pub fn x(self: This) f64 {

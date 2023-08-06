@@ -44,7 +44,7 @@ pub const Color = struct {
     }
 
     pub fn scaled(self: This, f: f64) This {
-        return This{ .vec = self.vec * @splat(3, f) };
+        return This{ .vec = self.vec * @as(@Vector(3, f64), @splat(f)) };
     }
 
     pub fn multiplied(self: This, other: This) This {

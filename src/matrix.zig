@@ -18,7 +18,7 @@ pub fn Matrix(comptime _rows: usize, comptime _cols: usize) type {
 
         pub fn init(inits: std.meta.Tuple(&[_]type{f64} ** (_rows * _cols))) This {
             const zero: f64 = 0;
-            var m = This{ .vec = @splat(_rows * _cols, zero) };
+            var m = This{ .vec = @as(@Vector(_rows * _cols, f64), @splat(zero)) };
 
             inline for (inits, 0..) |val, i| {
                 m.vec[i] = val;
@@ -71,7 +71,7 @@ pub fn Matrix(comptime _rows: usize, comptime _cols: usize) type {
 
         fn sliceRows(self: This) [This.compt_rows]@Vector(This.compt_columns, f64) {
             const zero: f64 = 0;
-            var result: [This.compt_rows]@Vector(This.compt_columns, f64) = .{@splat(This.compt_columns, zero)} ** This.compt_rows;
+            var result: [This.compt_rows]@Vector(This.compt_columns, f64) = .{@as(@Vector(This.compt_columns, f64), @splat(zero))} ** This.compt_rows;
 
             comptime var i: usize = 0;
             inline while (i < This.compt_columns * This.compt_rows) : (i += 1) {
@@ -146,8 +146,8 @@ pub fn Matrix(comptime _rows: usize, comptime _cols: usize) type {
             switch (This.compt_rows) {
                 2 => return self.vec[0] * self.vec[3] - self.vec[1] * self.vec[2],
                 3...4 => {
-                    var elemVec = @splat(This.compt_columns, self.vec[0]);
-                    var cofVec = @splat(This.compt_columns, self.cofactor(0, 0));
+                    var elemVec = @as(@Vector(This.compt_columns, f64), @splat(self.vec[0]));
+                    var cofVec = @as(@Vector(This.compt_columns, f64), @splat(self.cofactor(0, 0)));
 
                     comptime var i: usize = 1;
                     inline while (i < This.compt_columns) : (i += 1) {
@@ -186,7 +186,7 @@ pub fn Matrix(comptime _rows: usize, comptime _cols: usize) type {
             };
 
             const size = This.compt_rows * This.compt_columns;
-            cofacts /= @splat(size, self.determinant());
+            cofacts /= @as(@Vector(size, f64), @splat(self.determinant()));
 
             return This.fromVector(cofacts).transposed();
         }

@@ -13,8 +13,6 @@ pub fn build(b: *std.build.Builder) void {
         .root_source_file = .{ .path = "src/main.zig" },
         .optimize = optimize,
     });
-    exe.emit_docs = .emit;
-    exe.setMainPkgPath("./src");
 
     SDL.link(exe, .dynamic);
     exe.addModule("sdl2", SDL.getWrapperModule());
